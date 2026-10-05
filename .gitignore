@@ -1,0 +1,41 @@
+# =============================================================================
+# Monday - Root .gitignore
+# =============================================================================
+
+# --- Excluded folders and files ---
+development/
+*.md
+backend/src/main/resources/db/migration/
+
+# --- IDE & Editor ---
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# --- Environment & Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Node (frontend will live here later) ---
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# --- Logs ---
+*.log
+logs/
