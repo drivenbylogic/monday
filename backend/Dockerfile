@@ -2,10 +2,12 @@
 FROM maven:3.9.6-eclipse-temurin-21-jammy AS build
 WORKDIR /app
 
-# Copy everything at once to smash the broken cache loop
-COPY . .
+# Cache dependencies
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
 
-# Run the complete build process directly
+# Copy source code and build
+COPY src ./src
 RUN mvn clean package -DskipTests
 
 # Run stage
