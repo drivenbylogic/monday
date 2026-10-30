@@ -1,0 +1,15 @@
+target/
+.mvn/
+.git/
+.gitignore
+.vscode/
+.idea/
+*.log
+*.tmp
+*.class
+.env
+.env.*
+!*.env.example
+Check.java
+Check.class
+

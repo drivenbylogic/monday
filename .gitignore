@@ -7,6 +7,8 @@ development/
 frontend/
 scratch/
 *.md
+!README.md
+!DEPLOYMENT.md
 backend/src/main/resources/db/migration/
 
 # --- IDE & Editor ---

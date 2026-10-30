@@ -31,7 +31,7 @@ Monday is composed of several independent but interconnected modules:
 
 ### Running with Docker (Recommended)
 
-The easiest way to get the backend and database up and running is using Docker Compose.
+The easiest way to get the backend and database up and running locally is using Docker Compose.
 
 ```bash
 # Start the application and database in detached mode
@@ -45,6 +45,11 @@ To stop the containers:
 ```bash
 docker-compose down
 ```
+
+### Cloud Deployment (Docker)
+
+For deploying the backend to cloud services (Google Cloud Run, AWS App Runner / ECS, Railway, Render, Fly.io, or VPS), see the detailed guide:
+👉 **[Cloud Deployment Guide](DEPLOYMENT.md)**
 
 ### Local Development (Maven)
 

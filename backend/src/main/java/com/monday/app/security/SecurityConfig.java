@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.monday.app.shared.dto.ApiErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -23,6 +24,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -37,6 +39,9 @@ import java.util.Map;
 public class SecurityConfig {
 
     private final ObjectMapper objectMapper;
+
+    @Value("${cors.allowed-origins:https://monday-ui-omega.vercel.app,https://monday-ui-omega.vercel.app/}")
+    private String configuredAllowedOrigins;
 
     public SecurityConfig(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -59,7 +64,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers("/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                .requestMatchers("/actuator/health/**", "/actuator/health", "/actuator/info").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated()
             )
@@ -99,7 +104,25 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of(
+
+        List<String> origins = new ArrayList<>();
+        // Explicitly allowed frontend URLs (including Vercel hosted frontend)
+        origins.add("https://monday-ui-omega.vercel.app");
+        origins.add("https://monday-ui-omega.vercel.app/");
+        origins.add("https://*.vercel.app");
+
+        // Merge any comma-separated allowed origins from configuration / environment
+        if (configuredAllowedOrigins != null && !configuredAllowedOrigins.isBlank()) {
+            for (String origin : configuredAllowedOrigins.split(",")) {
+                String trimmed = origin.trim();
+                if (!trimmed.isEmpty() && !origins.contains(trimmed)) {
+                    origins.add(trimmed);
+                }
+            }
+        }
+
+        // Local development and private network patterns
+        origins.addAll(List.of(
                 "http://localhost:*",
                 "http://127.0.0.1:*",
                 "http://192.168.*:*",
@@ -122,10 +145,18 @@ public class SecurityConfig {
                 "http://172.31.*:*",
                 "*"
         ));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+
+        config.setAllowedOriginPatterns(origins);
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
-        config.setExposedHeaders(List.of("Set-Cookie"));
+        config.setExposedHeaders(List.of(
+                "Set-Cookie",
+                "Authorization",
+                "Access-Control-Allow-Origin",
+                "Access-Control-Allow-Credentials"
+        ));
+        config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

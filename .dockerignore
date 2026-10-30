@@ -1,0 +1,15 @@
+backend/target/
+frontend/node_modules/
+frontend/monday_ui/node_modules/
+development/
+scratch/
+.git/
+.gitignore
+.vscode/
+.idea/
+*.log
+*.tmp
+.env
+.env.*
+!*.env.example
+

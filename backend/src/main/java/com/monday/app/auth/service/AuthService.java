@@ -109,12 +109,16 @@ public class AuthService {
         sessionCookie.setPath("/");
         sessionCookie.setHttpOnly(true);
         sessionCookie.setMaxAge(0);
+        sessionCookie.setSecure(true);
+        sessionCookie.setAttribute("SameSite", "None");
         httpResponse.addCookie(sessionCookie);
 
         Cookie standardCookie = new Cookie("JSESSIONID", "");
         standardCookie.setPath("/");
         standardCookie.setHttpOnly(true);
         standardCookie.setMaxAge(0);
+        standardCookie.setSecure(true);
+        standardCookie.setAttribute("SameSite", "None");
         httpResponse.addCookie(standardCookie);
     }
 
