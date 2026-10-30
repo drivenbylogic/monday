@@ -210,7 +210,7 @@ public class VehicleService {
     }
 
     public java.util.Map<String, Object> getMaintenanceLedger(UUID vehicleId, String type, int limit) {
-        String sql = "SELECT id, vehicle_id as \"vehicleId\", title, to_char(service_date, 'YYYY-MM-DD') as date, " +
+        String sql = "SELECT id, vehicle_id as \"vehicleId\", service_type as title, service_type as \"serviceType\", to_char(service_date, 'YYYY-MM-DD') as date, " +
                      "km_at_service as \"odometerKm\", cost, is_upcoming as upcoming, verified, " +
                      "performed_by as \"serviceProvider\", description as details " +
                      "FROM vehicle_service_records WHERE vehicle_id = :id::uuid ";
@@ -222,7 +222,7 @@ public class VehicleService {
     
     @Transactional
     public java.util.Map<String, Object> logMaintenance(UUID vehicleId, java.util.Map<String, Object> body) {
-        String sql = "INSERT INTO vehicle_service_records (vehicle_id, title, cost, km_at_service, service_date, description, performed_by, verified, is_upcoming, linked_transaction_id) " +
+        String sql = "INSERT INTO vehicle_service_records (vehicle_id, service_type, cost, km_at_service, service_date, description, performed_by, verified, is_upcoming, linked_transaction_id) " +
                      "VALUES (:vId::uuid, :title, :cost, :odo, :date::date, :desc, :prov, :ver, false, :txId) RETURNING id";
         
         String txId = null;
@@ -234,7 +234,7 @@ public class VehicleService {
         
         org.springframework.jdbc.core.namedparam.MapSqlParameterSource params = new org.springframework.jdbc.core.namedparam.MapSqlParameterSource()
             .addValue("vId", vehicleId)
-            .addValue("title", body.get("title"))
+            .addValue("title", body.get("title") != null ? body.get("title") : body.get("serviceType"))
             .addValue("cost", body.get("cost"))
             .addValue("odo", body.get("odometerKm"))
             .addValue("date", body.get("date"))
@@ -253,7 +253,7 @@ public class VehicleService {
     }
 
     public java.util.Map<String, Object> getServiceScope(UUID vehicleId, String recordId) {
-        String sql = "SELECT id as \"recordId\", title as \"jobTitle\", specifications_json as specifications, parts_cost as \"estimatedPartsCost\", labor_cost as \"estimatedLaborCost\", cost as \"totalEstimate\" FROM vehicle_service_records WHERE id = :id::uuid";
+        String sql = "SELECT id as \"recordId\", service_type as \"jobTitle\", specifications_json as specifications, parts_cost as \"estimatedPartsCost\", labor_cost as \"estimatedLaborCost\", cost as \"totalEstimate\" FROM vehicle_service_records WHERE id = :id::uuid";
         return jdbc.queryForMap(sql, new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("id", recordId));
     }
 
@@ -277,24 +277,103 @@ public class VehicleService {
         );
     }
     
+    @Transactional
+    public java.util.Map<String, Object> setPrimaryVehicle(UUID vehicleId, boolean isPrimary) {
+        String nameSql = "SELECT name, COALESCE(edition, '') as edition FROM vehicles WHERE id = :id::uuid";
+        List<java.util.Map<String, Object>> vRows = jdbc.queryForList(nameSql, new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("id", vehicleId));
+        if (vRows.isEmpty()) {
+            throw new ResourceNotFoundException("Vehicle", vehicleId);
+        }
+        String vehicleName = ((String) vRows.get(0).get("name")).trim();
+        String edition = (String) vRows.get(0).get("edition");
+        if (edition != null && !edition.isBlank()) {
+            vehicleName = vehicleName + " " + edition.trim();
+        }
+
+        String prevPrimarySql = "SELECT id FROM vehicles WHERE is_primary = true AND id != :id::uuid LIMIT 1";
+        List<String> prevRows = jdbc.queryForList(prevPrimarySql, new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("id", vehicleId), String.class);
+        String previousPrimaryId = prevRows.isEmpty() ? null : prevRows.get(0);
+
+        if (isPrimary) {
+            jdbc.update("UPDATE vehicles SET is_primary = false WHERE is_primary = true", new org.springframework.jdbc.core.namedparam.MapSqlParameterSource());
+            jdbc.update("UPDATE vehicles SET is_primary = true WHERE id = :id::uuid", new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("id", vehicleId));
+        } else {
+            jdbc.update("UPDATE vehicles SET is_primary = false WHERE id = :id::uuid", new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("id", vehicleId));
+        }
+
+        java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("vehicleId", vehicleId.toString());
+        resp.put("name", vehicleName);
+        resp.put("isPrimary", isPrimary);
+        resp.put("previousPrimaryId", previousPrimaryId);
+        resp.put("updatedAt", java.time.Instant.now().toString());
+        return resp;
+    }
+
+    private static final java.util.Set<String> VALID_FUEL_GRADES = java.util.Set.of(
+            "STANDARD_RON91",
+            "XP95_RON95",
+            "V-POWER_95",
+            "SPEED_RON97",
+            "IOCL_100_OCTANE"
+    );
+
     public java.util.Map<String, Object> getFuelLogs(UUID vehicleId, int limit) {
-        String sql = "SELECT id, to_char(log_date, 'Mon DD, YYYY') as date, brand, location, volume_liters as \"volumeLiters\", " +
-                     "total_cost as \"totalCost\", price_per_liter as \"pricePerLiter\", odometer_km as \"odometerKm\", trip_efficiency as \"tripEfficiencyKmPerL\" " +
-                     "FROM vehicle_fuel_logs WHERE vehicle_id = :id::uuid ORDER BY log_date DESC LIMIT :limit";
+        String sql = """
+            SELECT id, to_char(log_date, 'YYYY-MM-DD') as date,
+                   COALESCE(fuel_brand, brand) as "fuelBrand",
+                   COALESCE(brand, fuel_brand) as brand,
+                   COALESCE(station_location, location) as "stationLocation",
+                   COALESCE(location, station_location) as location,
+                   fuel_grade as "fuelGrade",
+                   full_tank as "fullTank",
+                   volume_liters as "volumeLiters",
+                   total_cost as "totalCost",
+                   price_per_liter as "pricePerLiter",
+                   odometer_km as "odometerKm",
+                   trip_efficiency as "tripEfficiencyKmPerL",
+                   to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "loggedAt"
+            FROM vehicle_fuel_logs
+            WHERE vehicle_id = :id::uuid
+            ORDER BY log_date DESC, created_at DESC
+            LIMIT :limit
+        """;
         List<java.util.Map<String, Object>> data = jdbc.queryForList(sql, new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("id", vehicleId).addValue("limit", limit));
         return java.util.Map.of("data", data, "totalCount", data.size());
     }
     
     @Transactional
     public java.util.Map<String, Object> logFuel(UUID vehicleId, java.util.Map<String, Object> body) {
-        String sql = "INSERT INTO vehicle_fuel_logs (vehicle_id, log_date, brand, location, volume_liters, total_cost, odometer_km) " +
-                     "VALUES (:vId::uuid, :date::date, :brand, :loc, :vol, :cost, :odo) RETURNING id";
+        String fuelGrade = (String) body.get("fuelGrade");
+        if (fuelGrade != null && !fuelGrade.isBlank()) {
+            fuelGrade = fuelGrade.trim();
+            if (!VALID_FUEL_GRADES.contains(fuelGrade)) {
+                throw new IllegalArgumentException("Invalid fuel grade specified");
+            }
+        }
+
+        String fuelBrand = (String) (body.containsKey("fuelBrand") ? body.get("fuelBrand") : body.get("brand"));
+        String stationLocation = (String) (body.containsKey("stationLocation") ? body.get("stationLocation") : body.get("location"));
+        Boolean fullTank = body.containsKey("fullTank") ? Boolean.TRUE.equals(body.get("fullTank")) : true;
+
+        Object dateObj = body.containsKey("loggedAt") ? body.get("loggedAt") : body.get("date");
+        String logDate = dateObj != null ? dateObj.toString().substring(0, Math.min(10, dateObj.toString().length())) : java.time.LocalDate.now().toString();
+
+        String sql = """
+            INSERT INTO vehicle_fuel_logs (vehicle_id, log_date, brand, fuel_brand, location, station_location, fuel_grade, full_tank, volume_liters, total_cost, odometer_km)
+            VALUES (:vId::uuid, :date::date, :brand, :fuelBrand, :loc, :stationLoc, :fuelGrade, :fullTank, :vol, :cost, :odo)
+            RETURNING id
+        """;
                      
         org.springframework.jdbc.core.namedparam.MapSqlParameterSource params = new org.springframework.jdbc.core.namedparam.MapSqlParameterSource()
             .addValue("vId", vehicleId)
-            .addValue("date", body.get("date"))
-            .addValue("brand", body.get("brand"))
-            .addValue("loc", body.get("location"))
+            .addValue("date", logDate)
+            .addValue("brand", fuelBrand)
+            .addValue("fuelBrand", fuelBrand)
+            .addValue("loc", stationLocation)
+            .addValue("stationLoc", stationLocation)
+            .addValue("fuelGrade", fuelGrade)
+            .addValue("fullTank", fullTank)
             .addValue("vol", body.get("volumeLiters"))
             .addValue("cost", body.get("totalCost"))
             .addValue("odo", body.get("odometerKm"));
@@ -302,13 +381,28 @@ public class VehicleService {
         String id = jdbc.queryForObject(sql, params, String.class);
         
         if (Boolean.TRUE.equals(body.get("syncToFinance"))) {
-             jdbc.update("INSERT INTO transactions (id, transaction_type, amount, transaction_at, description) VALUES (:txId::uuid, 'expense', :cost, CURRENT_TIMESTAMP, 'Fuel')",
-                new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("txId", UUID.randomUUID().toString()).addValue("cost", body.get("totalCost")));
+             String txSql = """
+                INSERT INTO transactions (id, transaction_type, amount, transaction_at, description, linked_module, linked_entity_id, linked_entity_type)
+                VALUES (:txId::uuid, 'EXPENSE', :cost, CURRENT_TIMESTAMP, 'Fuel: ' || COALESCE(:brand, 'Fleet'), 'VEHICLES', :vId, 'FUEL_LOG')
+             """;
+             jdbc.update(txSql, new org.springframework.jdbc.core.namedparam.MapSqlParameterSource()
+                     .addValue("txId", UUID.randomUUID().toString())
+                     .addValue("cost", body.get("totalCost"))
+                     .addValue("brand", fuelBrand)
+                     .addValue("vId", vehicleId.toString()));
         }
         
-        java.util.Map<String, Object> res = new java.util.HashMap<>(body);
+        java.util.Map<String, Object> res = new java.util.LinkedHashMap<>();
         res.put("id", id);
-        res.put("vehicleId", vehicleId);
+        res.put("vehicleId", vehicleId.toString());
+        res.put("odometerKm", body.get("odometerKm"));
+        res.put("volumeLiters", body.get("volumeLiters"));
+        res.put("totalCost", body.get("totalCost"));
+        res.put("fuelBrand", fuelBrand);
+        res.put("fuelGrade", fuelGrade);
+        res.put("stationLocation", stationLocation);
+        res.put("fullTank", fullTank);
+        res.put("loggedAt", dateObj != null ? dateObj.toString() : java.time.Instant.now().toString());
         return res;
     }
 

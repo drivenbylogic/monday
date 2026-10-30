@@ -55,6 +55,11 @@ public class MilestoneRepository {
                 .stream().findFirst();
     }
 
+    public List<Milestone> findAll() {
+        String sql = "SELECT * FROM milestones ORDER BY due_at ASC NULLS LAST, created_at";
+        return jdbc.query(sql, MilestoneRowMapper.INSTANCE);
+    }
+
     public List<Milestone> findByProjectId(UUID projectId) {
         String sql = "SELECT * FROM milestones WHERE project_id = :projectId ORDER BY due_at, created_at";
         return jdbc.query(sql, new MapSqlParameterSource("projectId", projectId), MilestoneRowMapper.INSTANCE);

@@ -25,8 +25,12 @@ public class VehicleRepository {
     public Vehicle save(Vehicle vehicle) {
         UUID id = vehicle.getId() != null ? vehicle.getId() : UUID.randomUUID();
         String sql = """
-                INSERT INTO vehicles (id, name, registration_number, purchase_date, purchase_amount, current_km, status)
-                VALUES (:id, :name, :registrationNumber, :purchaseDate, :purchaseAmount, :currentKm, :status)
+                INSERT INTO vehicles (id, name, registration_number, purchase_date, purchase_amount, current_km, status,
+                                      edition, variant, type, is_primary, hero_image_url, vin, emission_standard,
+                                      registered_owner, registering_authority)
+                VALUES (:id, :name, :registrationNumber, :purchaseDate, :purchaseAmount, :currentKm, :status,
+                        :edition, :variant, :type, :isPrimary, :heroImageUrl, :vin, :emissionStandard,
+                        :registeredOwner, :registeringAuthority)
                 RETURNING *
                 """;
         return jdbc.queryForObject(sql, toParams(id, vehicle), VehicleRowMapper.INSTANCE);
@@ -37,7 +41,11 @@ public class VehicleRepository {
                 UPDATE vehicles SET
                     name = :name, registration_number = :registrationNumber,
                     purchase_date = :purchaseDate, purchase_amount = :purchaseAmount,
-                    current_km = :currentKm, status = :status
+                    current_km = :currentKm, status = :status,
+                    edition = :edition, variant = :variant, type = :type,
+                    is_primary = :isPrimary, hero_image_url = :heroImageUrl,
+                    vin = :vin, emission_standard = :emissionStandard,
+                    registered_owner = :registeredOwner, registering_authority = :registeringAuthority
                 WHERE id = :id RETURNING *
                 """;
         return jdbc.queryForObject(sql, toParams(vehicle.getId(), vehicle), VehicleRowMapper.INSTANCE);
@@ -49,7 +57,7 @@ public class VehicleRepository {
     }
 
     public List<Vehicle> findAll() {
-        return jdbc.query("SELECT * FROM vehicles ORDER BY created_at DESC", VehicleRowMapper.INSTANCE);
+        return jdbc.query("SELECT * FROM vehicles ORDER BY is_primary DESC, created_at DESC", VehicleRowMapper.INSTANCE);
     }
 
     public void deleteById(UUID id) {
@@ -64,7 +72,16 @@ public class VehicleRepository {
                 .addValue("purchaseDate", v.getPurchaseDate() != null ? Date.valueOf(v.getPurchaseDate()) : null)
                 .addValue("purchaseAmount", v.getPurchaseAmount())
                 .addValue("currentKm", v.getCurrentKm())
-                .addValue("status", v.getStatus());
+                .addValue("status", v.getStatus() != null ? v.getStatus() : "ACTIVE")
+                .addValue("edition", v.getEdition())
+                .addValue("variant", v.getVariant())
+                .addValue("type", v.getType())
+                .addValue("isPrimary", Boolean.TRUE.equals(v.getIsPrimary()))
+                .addValue("heroImageUrl", v.getHeroImageUrl())
+                .addValue("vin", v.getVin())
+                .addValue("emissionStandard", v.getEmissionStandard())
+                .addValue("registeredOwner", v.getRegisteredOwner())
+                .addValue("registeringAuthority", v.getRegisteringAuthority());
     }
 
     static final class VehicleRowMapper implements RowMapper<Vehicle> {
@@ -72,7 +89,7 @@ public class VehicleRepository {
 
         @Override
         public Vehicle mapRow(ResultSet rs, int rowNum) throws SQLException {
-            return new Vehicle(
+            Vehicle v = new Vehicle(
                     UUID.fromString(rs.getString("id")),
                     rs.getString("name"),
                     rs.getString("registration_number"),
@@ -83,6 +100,16 @@ public class VehicleRepository {
                     rs.getTimestamp("created_at").toInstant(),
                     rs.getTimestamp("updated_at").toInstant()
             );
+            v.setEdition(rs.getString("edition"));
+            v.setVariant(rs.getString("variant"));
+            v.setType(rs.getString("type"));
+            v.setIsPrimary(rs.getBoolean("is_primary"));
+            v.setHeroImageUrl(rs.getString("hero_image_url"));
+            v.setVin(rs.getString("vin"));
+            v.setEmissionStandard(rs.getString("emission_standard"));
+            v.setRegisteredOwner(rs.getString("registered_owner"));
+            v.setRegisteringAuthority(rs.getString("registering_authority"));
+            return v;
         }
     }
 }

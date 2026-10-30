@@ -94,7 +94,7 @@ public class EventRepository {
 
         @Override
         public Event mapRow(ResultSet rs, int rowNum) throws SQLException {
-            return new Event(
+            Event event = new Event(
                     UUID.fromString(rs.getString("id")),
                     rs.getString("title"),
                     rs.getString("description"),
@@ -109,6 +109,12 @@ public class EventRepository {
                     rs.getTimestamp("created_at").toInstant(),
                     rs.getTimestamp("updated_at").toInstant()
             );
+            try {
+                event.setRequiresPrep(rs.getBoolean("requires_prep"));
+                event.setPrepTitle(rs.getString("prep_title"));
+                event.setPrepDueText(rs.getString("prep_due_text"));
+            } catch (SQLException ignored) {}
+            return event;
         }
     }
 

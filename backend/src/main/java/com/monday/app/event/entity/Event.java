@@ -22,6 +22,10 @@ public final class Event {
     private Instant createdAt;
     private Instant updatedAt;
 
+    private boolean requiresPrep;
+    private String prepTitle;
+    private String prepDueText;
+
     public Event() {}
 
     public Event(UUID id, String title, String description, String eventType,
@@ -75,6 +79,15 @@ public final class Event {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public boolean isRequiresPrep() { return requiresPrep; }
+    public void setRequiresPrep(boolean requiresPrep) { this.requiresPrep = requiresPrep; }
+
+    public String getPrepTitle() { return prepTitle; }
+    public void setPrepTitle(String prepTitle) { this.prepTitle = prepTitle; }
+
+    public String getPrepDueText() { return prepDueText; }
+    public void setPrepDueText(String prepDueText) { this.prepDueText = prepDueText; }
 
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

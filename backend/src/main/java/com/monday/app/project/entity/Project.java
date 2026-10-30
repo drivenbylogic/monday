@@ -59,7 +59,40 @@ public final class Project {
     public void setPriority(String priority) { this.priority = priority; }
     
     public String getTags() { return tags; }
-    public void setTags(String tags) { this.tags = tags; }
+
+    @com.fasterxml.jackson.annotation.JsonSetter("tags")
+    public void setTagsFromJson(com.fasterxml.jackson.databind.JsonNode node) {
+        if (node == null || node.isNull()) {
+            this.tags = "[]";
+        } else if (node.isArray()) {
+            this.tags = node.toString();
+        } else if (node.isTextual()) {
+            setTags(node.asText());
+        } else {
+            this.tags = node.toString();
+        }
+    }
+
+    public void setTags(String tags) {
+        if (tags == null || tags.isBlank()) {
+            this.tags = "[]";
+        } else {
+            String trimmed = tags.trim();
+            if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+                this.tags = trimmed;
+            } else {
+                java.util.List<String> list = java.util.Arrays.stream(trimmed.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .toList();
+                try {
+                    this.tags = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(list);
+                } catch (Exception e) {
+                    this.tags = "[]";
+                }
+            }
+        }
+    }
 
     public Instant getStartAt() { return startAt; }
     public void setStartAt(Instant startAt) { this.startAt = startAt; }

@@ -13,12 +13,19 @@ public final class VehicleServiceRecord {
     private String serviceType;
     private String description;
     private BigDecimal cost;
+    private BigDecimal partsCost;
+    private BigDecimal laborCost;
     private String performedBy;
     private String notes;
+    private Boolean verified;
+    private Boolean isUpcoming;
+    private String linkedTransactionId;
+    private String specificationsJson;
     private Instant createdAt;
     private Instant updatedAt;
 
     public VehicleServiceRecord() {}
+
     public VehicleServiceRecord(UUID id, UUID vehicleId, LocalDate serviceDate, Integer kmAtService,
                                 String serviceType, String description, BigDecimal cost,
                                 String performedBy, String notes, Instant createdAt, Instant updatedAt) {
@@ -26,6 +33,10 @@ public final class VehicleServiceRecord {
         this.kmAtService = kmAtService; this.serviceType = serviceType;
         this.description = description; this.cost = cost; this.performedBy = performedBy;
         this.notes = notes; this.createdAt = createdAt; this.updatedAt = updatedAt;
+        this.partsCost = BigDecimal.ZERO;
+        this.laborCost = BigDecimal.ZERO;
+        this.verified = false;
+        this.isUpcoming = false;
     }
 
     public UUID getId() { return id; }
@@ -42,10 +53,22 @@ public final class VehicleServiceRecord {
     public void setDescription(String description) { this.description = description; }
     public BigDecimal getCost() { return cost; }
     public void setCost(BigDecimal cost) { this.cost = cost; }
+    public BigDecimal getPartsCost() { return partsCost; }
+    public void setPartsCost(BigDecimal partsCost) { this.partsCost = partsCost; }
+    public BigDecimal getLaborCost() { return laborCost; }
+    public void setLaborCost(BigDecimal laborCost) { this.laborCost = laborCost; }
     public String getPerformedBy() { return performedBy; }
     public void setPerformedBy(String performedBy) { this.performedBy = performedBy; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+    public Boolean getVerified() { return verified; }
+    public void setVerified(Boolean verified) { this.verified = verified; }
+    public Boolean getIsUpcoming() { return isUpcoming; }
+    public void setIsUpcoming(Boolean upcoming) { isUpcoming = upcoming; }
+    public String getLinkedTransactionId() { return linkedTransactionId; }
+    public void setLinkedTransactionId(String linkedTransactionId) { this.linkedTransactionId = linkedTransactionId; }
+    public String getSpecificationsJson() { return specificationsJson; }
+    public void setSpecificationsJson(String specificationsJson) { this.specificationsJson = specificationsJson; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

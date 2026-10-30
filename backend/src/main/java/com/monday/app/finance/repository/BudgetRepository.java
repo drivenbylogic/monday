@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -26,8 +27,8 @@ public class BudgetRepository {
     public Budget save(Budget budget) {
         UUID id = budget.getId() != null ? budget.getId() : UUID.randomUUID();
         String sql = """
-                INSERT INTO budgets (id, name, category_id, period_start, period_end, amount)
-                VALUES (:id, :name, :categoryId, :periodStart, :periodEnd, :amount)
+                INSERT INTO budgets (id, name, category_id, period_start, period_end, amount, period_type)
+                VALUES (:id, :name, :categoryId, :periodStart, :periodEnd, :amount, :periodType)
                 RETURNING *
                 """;
         return jdbc.queryForObject(sql, toParams(id, budget), BudgetRowMapper.INSTANCE);
@@ -37,7 +38,8 @@ public class BudgetRepository {
         String sql = """
                 UPDATE budgets SET
                     name = :name, category_id = :categoryId,
-                    period_start = :periodStart, period_end = :periodEnd, amount = :amount
+                    period_start = :periodStart, period_end = :periodEnd, amount = :amount,
+                    period_type = :periodType
                 WHERE id = :id RETURNING *
                 """;
         return jdbc.queryForObject(sql, toParams(budget.getId(), budget), BudgetRowMapper.INSTANCE);
@@ -63,7 +65,8 @@ public class BudgetRepository {
     public List<Budget> findActiveForDate(LocalDate date) {
         String sql = """
                 SELECT * FROM budgets
-                WHERE period_start <= :date AND period_end >= :date
+                WHERE (period_start <= :date AND period_end >= :date)
+                   OR period_type = 'MONTHLY'
                 ORDER BY period_start
                 """;
         return jdbc.query(sql, new MapSqlParameterSource("date", Date.valueOf(date)), BudgetRowMapper.INSTANCE);
@@ -74,13 +77,22 @@ public class BudgetRepository {
     }
 
     private MapSqlParameterSource toParams(UUID id, Budget b) {
+        LocalDate start = b.getPeriodStart() != null ? b.getPeriodStart() : LocalDate.now().withDayOfMonth(1);
+        LocalDate end = b.getPeriodEnd() != null ? b.getPeriodEnd() : LocalDate.now().withDayOfMonth(LocalDate.now().lengthOfMonth());
+        if (end.isBefore(start)) {
+            end = start.plusMonths(1).minusDays(1);
+        }
+        String name = (b.getName() != null && !b.getName().trim().isEmpty()) ? b.getName().trim() : "Budget Envelope";
+        String periodType = (b.getPeriodType() != null && !b.getPeriodType().trim().isEmpty())
+                ? b.getPeriodType().trim().toUpperCase() : "MONTHLY";
         return new MapSqlParameterSource()
                 .addValue("id", id)
-                .addValue("name", b.getName())
+                .addValue("name", name)
                 .addValue("categoryId", b.getCategoryId())
-                .addValue("periodStart", Date.valueOf(b.getPeriodStart()))
-                .addValue("periodEnd", Date.valueOf(b.getPeriodEnd()))
-                .addValue("amount", b.getAmount());
+                .addValue("periodStart", Date.valueOf(start))
+                .addValue("periodEnd", Date.valueOf(end))
+                .addValue("amount", b.getAmount() != null ? b.getAmount() : BigDecimal.ZERO)
+                .addValue("periodType", periodType);
     }
 
     static final class BudgetRowMapper implements RowMapper<Budget> {
@@ -88,6 +100,12 @@ public class BudgetRepository {
 
         @Override
         public Budget mapRow(ResultSet rs, int rowNum) throws SQLException {
+            String pType = "MONTHLY";
+            try {
+                pType = rs.getString("period_type");
+                if (pType == null) pType = "MONTHLY";
+            } catch (Exception ignored) {}
+
             return new Budget(
                     UUID.fromString(rs.getString("id")),
                     rs.getString("name"),
@@ -95,6 +113,7 @@ public class BudgetRepository {
                     rs.getDate("period_start").toLocalDate(),
                     rs.getDate("period_end").toLocalDate(),
                     rs.getBigDecimal("amount"),
+                    pType,
                     rs.getTimestamp("created_at").toInstant(),
                     rs.getTimestamp("updated_at").toInstant()
             );

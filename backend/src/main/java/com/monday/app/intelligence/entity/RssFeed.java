@@ -26,8 +26,32 @@ public class RssFeed {
     @Column(nullable = false)
     private String status = "ACTIVE";
 
+    @Column(name = "area_of_interest")
+    private String areaOfInterest = "TECHNOLOGY";
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    @Column(name = "is_enabled", nullable = false)
+    private Boolean isEnabled = true;
+
+    @Column(name = "article_limit", nullable = false)
+    private Integer articleLimit = 5;
+
     @Column(name = "source_quality", nullable = false)
     private Double sourceQuality = 0.5;
+
+    @Column(name = "etag")
+    private String etag;
+
+    @Column(name = "last_modified_header")
+    private String lastModifiedHeader;
+
+    @Column(name = "last_attempted_at")
+    private OffsetDateTime lastAttemptedAt;
+
+    @Column(name = "last_fetch_status")
+    private String lastFetchStatus = "IDLE";
 
     @Column(name = "last_fetched_at")
     private OffsetDateTime lastFetchedAt;
@@ -62,8 +86,24 @@ public class RssFeed {
     public void setSiteUrl(String siteUrl) { this.siteUrl = siteUrl; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getAreaOfInterest() { return areaOfInterest; }
+    public void setAreaOfInterest(String areaOfInterest) { this.areaOfInterest = areaOfInterest; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    public Boolean getIsEnabled() { return isEnabled; }
+    public void setIsEnabled(Boolean isEnabled) { this.isEnabled = isEnabled; }
+    public Integer getArticleLimit() { return articleLimit; }
+    public void setArticleLimit(Integer articleLimit) { this.articleLimit = articleLimit; }
     public Double getSourceQuality() { return sourceQuality; }
     public void setSourceQuality(Double sourceQuality) { this.sourceQuality = sourceQuality; }
+    public String getEtag() { return etag; }
+    public void setEtag(String etag) { this.etag = etag; }
+    public String getLastModifiedHeader() { return lastModifiedHeader; }
+    public void setLastModifiedHeader(String lastModifiedHeader) { this.lastModifiedHeader = lastModifiedHeader; }
+    public OffsetDateTime getLastAttemptedAt() { return lastAttemptedAt; }
+    public void setLastAttemptedAt(OffsetDateTime lastAttemptedAt) { this.lastAttemptedAt = lastAttemptedAt; }
+    public String getLastFetchStatus() { return lastFetchStatus; }
+    public void setLastFetchStatus(String lastFetchStatus) { this.lastFetchStatus = lastFetchStatus; }
     public OffsetDateTime getLastFetchedAt() { return lastFetchedAt; }
     public void setLastFetchedAt(OffsetDateTime lastFetchedAt) { this.lastFetchedAt = lastFetchedAt; }
     public OffsetDateTime getLastSuccessAt() { return lastSuccessAt; }

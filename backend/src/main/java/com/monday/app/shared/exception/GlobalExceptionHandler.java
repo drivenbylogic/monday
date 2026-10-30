@@ -58,8 +58,38 @@ public class GlobalExceptionHandler {
             IllegalArgumentException ex, HttpServletRequest request) {
 
         ApiErrorResponse body = new ApiErrorResponse(
-                "BAD_REQUEST", ex.getMessage(), request.getRequestURI());
+                "VALIDATION_ERROR", ex.getMessage(), request.getRequestURI());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleMessageNotReadable(
+            org.springframework.http.converter.HttpMessageNotReadableException ex, HttpServletRequest request) {
+
+        log.warn("Malformed HTTP request at {}: {}", request.getRequestURI(), ex.getMessage());
+        ApiErrorResponse body = new ApiErrorResponse(
+                "MALFORMED_REQUEST", ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage(), request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingParam(
+            org.springframework.web.bind.MissingServletRequestParameterException ex, HttpServletRequest request) {
+
+        ApiErrorResponse body = new ApiErrorResponse(
+                "MISSING_PARAMETER", ex.getMessage(), request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(org.springframework.dao.DataAccessException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataAccessException(
+            org.springframework.dao.DataAccessException ex, HttpServletRequest request) {
+
+        log.error("Database error at {}", request.getRequestURI(), ex);
+        String msg = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+        ApiErrorResponse body = new ApiErrorResponse(
+                "DATABASE_ERROR", msg, request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 
     @ExceptionHandler(Exception.class)
@@ -68,7 +98,7 @@ public class GlobalExceptionHandler {
 
         log.error("Unhandled exception at {}", request.getRequestURI(), ex);
         ApiErrorResponse body = new ApiErrorResponse(
-                "INTERNAL_ERROR", "An unexpected error occurred", request.getRequestURI());
+                "INTERNAL_ERROR", ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred", request.getRequestURI());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 }

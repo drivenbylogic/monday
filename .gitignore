@@ -4,6 +4,8 @@
 
 # --- Excluded folders and files ---
 development/
+frontend/
+scratch/
 *.md
 backend/src/main/resources/db/migration/
 

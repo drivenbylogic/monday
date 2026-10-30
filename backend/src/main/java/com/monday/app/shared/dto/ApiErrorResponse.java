@@ -34,4 +34,9 @@ public record ApiErrorResponse(
     public ApiErrorResponse(String code, String message, Map<String, Object> details, String path) {
         this(code, message, details, Instant.now(), path);
     }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("error")
+    public boolean isError() {
+        return true;
+    }
 }

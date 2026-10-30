@@ -10,4 +10,7 @@ import java.util.UUID;
 @Repository
 public interface InterestCategoryRepository extends JpaRepository<InterestCategory, UUID> {
     Optional<InterestCategory> findByCode(String code);
+    Optional<InterestCategory> findByCodeIgnoreCase(String code);
+    Optional<InterestCategory> findByNameIgnoreCase(String name);
+    boolean existsByCodeIgnoreCase(String code);
 }

@@ -13,19 +13,21 @@ public final class Budget {
     private LocalDate periodStart;
     private LocalDate periodEnd;
     private BigDecimal amount;
+    private String periodType = "MONTHLY";
     private Instant createdAt;
     private Instant updatedAt;
 
     public Budget() {}
 
     public Budget(UUID id, String name, UUID categoryId, LocalDate periodStart,
-                  LocalDate periodEnd, BigDecimal amount, Instant createdAt, Instant updatedAt) {
+                  LocalDate periodEnd, BigDecimal amount, String periodType, Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.name = name;
         this.categoryId = categoryId;
         this.periodStart = periodStart;
         this.periodEnd = periodEnd;
         this.amount = amount;
+        this.periodType = (periodType != null && !periodType.trim().isEmpty()) ? periodType : "MONTHLY";
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
@@ -42,6 +44,8 @@ public final class Budget {
     public void setPeriodEnd(LocalDate periodEnd) { this.periodEnd = periodEnd; }
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
+    public String getPeriodType() { return periodType; }
+    public void setPeriodType(String periodType) { this.periodType = periodType; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

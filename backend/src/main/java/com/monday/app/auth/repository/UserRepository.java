@@ -56,6 +56,14 @@ public class UserRepository {
         return jdbc.query(sql, params, new UserRowMapper()).stream().findFirst();
     }
 
+    public void updatePasswordHash(UUID id, String passwordHash) {
+        String sql = "UPDATE users SET password_hash = :passwordHash, updated_at = NOW() WHERE id = :id";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("id", id)
+                .addValue("passwordHash", passwordHash);
+        jdbc.update(sql, params);
+    }
+
     private static class UserRowMapper implements RowMapper<User> {
         @Override
         public User mapRow(ResultSet rs, int rowNum) throws SQLException {

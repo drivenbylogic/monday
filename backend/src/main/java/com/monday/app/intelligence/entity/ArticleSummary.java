@@ -6,6 +6,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Column;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.JoinColumn;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -31,6 +32,12 @@ public class ArticleSummary {
 
     @Column(name = "word_count")
     private Integer wordCount;
+
+    @Column(name = "tokens_used")
+    private Integer tokensUsed = 0;
+
+    @Column(name = "estimated_cost", precision = 8, scale = 6)
+    private BigDecimal estimatedCost = BigDecimal.ZERO;
 
     @Column(name = "generated_at")
     private OffsetDateTime generatedAt;
@@ -61,6 +68,10 @@ public class ArticleSummary {
     public void setPromptVersion(String promptVersion) { this.promptVersion = promptVersion; }
     public Integer getWordCount() { return wordCount; }
     public void setWordCount(Integer wordCount) { this.wordCount = wordCount; }
+    public Integer getTokensUsed() { return tokensUsed; }
+    public void setTokensUsed(Integer tokensUsed) { this.tokensUsed = tokensUsed; }
+    public BigDecimal getEstimatedCost() { return estimatedCost; }
+    public void setEstimatedCost(BigDecimal estimatedCost) { this.estimatedCost = estimatedCost; }
     public OffsetDateTime getGeneratedAt() { return generatedAt; }
     public void setGeneratedAt(OffsetDateTime generatedAt) { this.generatedAt = generatedAt; }
     public String getStatus() { return status; }

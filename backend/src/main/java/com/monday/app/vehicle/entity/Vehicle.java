@@ -13,10 +13,20 @@ public final class Vehicle {
     private BigDecimal purchaseAmount;
     private int currentKm;
     private String status;
+    private String edition;
+    private String variant;
+    private String type;
+    private Boolean isPrimary;
+    private String heroImageUrl;
+    private String vin;
+    private String emissionStandard;
+    private String registeredOwner;
+    private String registeringAuthority;
     private Instant createdAt;
     private Instant updatedAt;
 
     public Vehicle() {}
+
     public Vehicle(UUID id, String name, String registrationNumber, LocalDate purchaseDate,
                    BigDecimal purchaseAmount, int currentKm, String status,
                    Instant createdAt, Instant updatedAt) {
@@ -40,6 +50,24 @@ public final class Vehicle {
     public void setCurrentKm(int currentKm) { this.currentKm = currentKm; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getEdition() { return edition; }
+    public void setEdition(String edition) { this.edition = edition; }
+    public String getVariant() { return variant; }
+    public void setVariant(String variant) { this.variant = variant; }
+    public String getType() { return type; }
+    public void setType(String type) { this.type = type; }
+    public Boolean getIsPrimary() { return isPrimary; }
+    public void setIsPrimary(Boolean primary) { isPrimary = primary; }
+    public String getHeroImageUrl() { return heroImageUrl; }
+    public void setHeroImageUrl(String heroImageUrl) { this.heroImageUrl = heroImageUrl; }
+    public String getVin() { return vin; }
+    public void setVin(String vin) { this.vin = vin; }
+    public String getEmissionStandard() { return emissionStandard; }
+    public void setEmissionStandard(String emissionStandard) { this.emissionStandard = emissionStandard; }
+    public String getRegisteredOwner() { return registeredOwner; }
+    public void setRegisteredOwner(String registeredOwner) { this.registeredOwner = registeredOwner; }
+    public String getRegisteringAuthority() { return registeringAuthority; }
+    public void setRegisteringAuthority(String registeringAuthority) { this.registeringAuthority = registeringAuthority; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

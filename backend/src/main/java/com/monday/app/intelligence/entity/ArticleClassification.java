@@ -6,6 +6,8 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Column;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.JoinColumn;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.OffsetDateTime;
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -32,6 +34,7 @@ public class ArticleClassification {
     private Boolean isPrimary = false;
 
     @Column(name = "matched_signals", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String matchedSignals;
 
     @Column(name = "classified_at", nullable = false, updatable = false)

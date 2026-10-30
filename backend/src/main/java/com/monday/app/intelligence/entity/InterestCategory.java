@@ -4,6 +4,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Column;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -26,6 +28,7 @@ public class InterestCategory {
     @Column(nullable = false, length = 50)
     private String status = "ACTIVE";
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "classification_config", columnDefinition = "jsonb")
     private String classificationConfig;
 

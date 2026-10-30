@@ -26,7 +26,7 @@ public class ProjectRepository {
         UUID id = project.getId() != null ? project.getId() : UUID.randomUUID();
         String sql = """
                 INSERT INTO projects (id, name, description, category, status, priority, tags, start_at, due_at, completed_at)
-                VALUES (:id, :name, :description, :category, :status, :priority, :tags, :startAt, :dueAt, :completedAt)
+                VALUES (:id, :name, :description, :category, :status, :priority, CAST(:tags AS jsonb), :startAt, :dueAt, :completedAt)
                 RETURNING *
                 """;
         return jdbc.queryForObject(sql, toParams(id, project), ProjectRowMapper.INSTANCE);
@@ -40,7 +40,7 @@ public class ProjectRepository {
                     category = :category,
                     status = :status,
                     priority = :priority,
-                    tags = :tags,
+                    tags = CAST(:tags AS jsonb),
                     start_at = :startAt,
                     due_at = :dueAt,
                     completed_at = :completedAt
@@ -81,6 +81,10 @@ public class ProjectRepository {
     }
 
     private MapSqlParameterSource toParams(UUID id, Project p) {
+        String safeTags = (p.getTags() != null && !p.getTags().isBlank()) ? p.getTags() : "[]";
+        if (!safeTags.trim().startsWith("[") && !safeTags.trim().startsWith("{")) {
+            safeTags = "[\"" + safeTags.replace("\"", "\\\"") + "\"]";
+        }
         return new MapSqlParameterSource()
                 .addValue("id", id)
                 .addValue("name", p.getName())
@@ -88,7 +92,7 @@ public class ProjectRepository {
                 .addValue("category", p.getCategory())
                 .addValue("status", p.getStatus())
                 .addValue("priority", p.getPriority())
-                .addValue("tags", p.getTags())
+                .addValue("tags", safeTags)
                 .addValue("startAt", p.getStartAt() != null ? Timestamp.from(p.getStartAt()) : null)
                 .addValue("dueAt", p.getDueAt() != null ? Timestamp.from(p.getDueAt()) : null)
                 .addValue("completedAt", p.getCompletedAt() != null ? Timestamp.from(p.getCompletedAt()) : null);

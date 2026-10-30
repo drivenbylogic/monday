@@ -36,7 +36,8 @@ public class DailyBriefRepository {
         String sql = """
                 UPDATE daily_briefs SET
                     brief_date = :briefDate, structured_agenda_json = :structuredAgendaJson::jsonb,
-                    ai_summary_markdown = :aiSummaryMarkdown, status = :status
+                    ai_summary_markdown = :aiSummaryMarkdown, status = :status,
+                    updated_at = NOW()
                 WHERE id = :id RETURNING *
                 """;
         return jdbc.queryForObject(sql, toParams(brief.getId(), brief), DailyBriefRowMapper.INSTANCE);

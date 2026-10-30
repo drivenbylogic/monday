@@ -15,13 +15,14 @@ public class OpenAiConfiguration {
 
     @Bean
     public OpenAIClient openAIClient() {
-        if (!StringUtils.hasText(apiKey)) {
+        String cleanKey = apiKey != null ? apiKey.trim().replaceAll("^\"|\"$", "") : "";
+        if (!StringUtils.hasText(cleanKey)) {
             // Optional: return a dummy client or let the context start and fail on use
             // For now, we instantiate it anyway. If apiKey is empty, it might fail at runtime.
             return OpenAIOkHttpClient.builder().apiKey("dummy").build();
         }
         return OpenAIOkHttpClient.builder()
-                .apiKey(apiKey)
+                .apiKey(cleanKey)
                 .build();
     }
 }

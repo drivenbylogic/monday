@@ -82,4 +82,18 @@ public class ProjectController {
     public ResponseEntity<List<Task>> getExecutionQueue() {
         return ResponseEntity.ok(projectService.getExecutionQueue());
     }
+
+    // --- Deep Work Focus Sessions & Analytics ---
+
+    @PostMapping("/deep-work/sessions")
+    public ResponseEntity<com.monday.app.project.dto.DeepWorkSessionResponse> logDeepWorkSession(
+            @Valid @RequestBody com.monday.app.project.dto.DeepWorkSessionRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(projectService.logDeepWorkSession(request));
+    }
+
+    @GetMapping("/deep-work/analytics")
+    public ResponseEntity<com.monday.app.project.dto.DeepWorkAnalyticsResponse> getDeepWorkAnalytics(
+            @RequestParam(required = false, defaultValue = "2") int weeks) {
+        return ResponseEntity.ok(projectService.getDeepWorkAnalytics(weeks));
+    }
 }

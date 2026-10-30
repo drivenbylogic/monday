@@ -4,6 +4,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Column;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -26,6 +27,9 @@ public class IntelligenceRun {
 
     @Column(nullable = false, length = 50)
     private String status;
+
+    @Column(name = "trigger_type", length = 50)
+    private String triggerType = "SCHEDULED";
 
     @Column(name = "feeds_attempted", nullable = false)
     private Integer feedsAttempted = 0;
@@ -57,6 +61,21 @@ public class IntelligenceRun {
     @Column(name = "summaries_failed", nullable = false)
     private Integer summariesFailed = 0;
 
+    @Column(name = "summaries_skipped", nullable = false)
+    private Integer summariesSkipped = 0;
+
+    @Column(name = "summaries_deferred", nullable = false)
+    private Integer summariesDeferred = 0;
+
+    @Column(name = "tokens_used", nullable = false)
+    private Integer tokensUsed = 0;
+
+    @Column(name = "estimated_cost", nullable = false, precision = 8, scale = 6)
+    private BigDecimal estimatedCost = BigDecimal.ZERO;
+
+    @Column(name = "duration_ms")
+    private Long durationMs = 0L;
+
     @Column(name = "failure_message", columnDefinition = "TEXT")
     private String failureMessage;
 
@@ -78,6 +97,8 @@ public class IntelligenceRun {
     public void setCompletedAt(OffsetDateTime completedAt) { this.completedAt = completedAt; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getTriggerType() { return triggerType; }
+    public void setTriggerType(String triggerType) { this.triggerType = triggerType; }
     public Integer getFeedsAttempted() { return feedsAttempted; }
     public void setFeedsAttempted(Integer feedsAttempted) { this.feedsAttempted = feedsAttempted; }
     public Integer getFeedsSucceeded() { return feedsSucceeded; }
@@ -98,6 +119,16 @@ public class IntelligenceRun {
     public void setSummariesGenerated(Integer summariesGenerated) { this.summariesGenerated = summariesGenerated; }
     public Integer getSummariesFailed() { return summariesFailed; }
     public void setSummariesFailed(Integer summariesFailed) { this.summariesFailed = summariesFailed; }
+    public Integer getSummariesSkipped() { return summariesSkipped; }
+    public void setSummariesSkipped(Integer summariesSkipped) { this.summariesSkipped = summariesSkipped; }
+    public Integer getSummariesDeferred() { return summariesDeferred; }
+    public void setSummariesDeferred(Integer summariesDeferred) { this.summariesDeferred = summariesDeferred; }
+    public Integer getTokensUsed() { return tokensUsed; }
+    public void setTokensUsed(Integer tokensUsed) { this.tokensUsed = tokensUsed; }
+    public BigDecimal getEstimatedCost() { return estimatedCost; }
+    public void setEstimatedCost(BigDecimal estimatedCost) { this.estimatedCost = estimatedCost; }
+    public Long getDurationMs() { return durationMs; }
+    public void setDurationMs(Long durationMs) { this.durationMs = durationMs; }
     public String getFailureMessage() { return failureMessage; }
     public void setFailureMessage(String failureMessage) { this.failureMessage = failureMessage; }
     public OffsetDateTime getCreatedAt() { return createdAt; }

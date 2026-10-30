@@ -8,6 +8,12 @@ public class ResourceNotFoundException extends RuntimeException {
     private final String resourceType;
     private final Object resourceId;
 
+    public ResourceNotFoundException(String message) {
+        super(message);
+        this.resourceType = "Resource";
+        this.resourceId = null;
+    }
+
     public ResourceNotFoundException(String resourceType, Object resourceId) {
         super("%s not found with id: %s".formatted(resourceType, resourceId));
         this.resourceType = resourceType;

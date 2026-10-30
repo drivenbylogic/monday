@@ -1,6 +1,6 @@
 package com.monday.app.intelligence.scheduler;
 
-import com.monday.app.intelligence.service.IntelligencePipelineService;
+import com.monday.app.intelligence.service.IntelligenceCoordinator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -12,18 +12,20 @@ import org.springframework.stereotype.Component;
 public class IntelligenceScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(IntelligenceScheduler.class);
-    
-    private final IntelligencePipelineService pipelineService;
 
-    public IntelligenceScheduler(IntelligencePipelineService pipelineService) {
-        this.pipelineService = pipelineService;
+    private final IntelligenceCoordinator coordinator;
+
+    public IntelligenceScheduler(IntelligenceCoordinator coordinator) {
+        this.coordinator = coordinator;
     }
 
-    // Run at 2:00 AM every day
-    @Scheduled(cron = "0 0 2 * * ?")
+    /**
+     * Runs daily at 6:00 AM IST (Indian Standard Time).
+     */
+    @Scheduled(cron = "${intelligence.scheduler.cron:0 0 6 * * ?}", zone = "${intelligence.scheduler.zone:Asia/Kolkata}")
     public void scheduleDailyIntelligenceRun() {
-        log.info("Starting scheduled daily intelligence run");
-        pipelineService.runDaily();
-        log.info("Finished scheduled daily intelligence run");
+        log.info("Triggering scheduled 6:00 AM IST daily intelligence run");
+        coordinator.triggerScheduledGeneration();
+        log.info("Finished scheduled 6:00 AM IST daily intelligence run");
     }
 }
