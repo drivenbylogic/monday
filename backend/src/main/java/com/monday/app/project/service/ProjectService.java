@@ -21,12 +21,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import com.monday.app.project.dto.MilestoneRoadmapDto;
+import com.monday.app.project.dto.MilestoneTaskDto;
 
 @Service
 public class ProjectService {
@@ -117,17 +123,137 @@ public class ProjectService {
     }
 
     public List<ProjectBasicResponse> getBasicProjects() {
-        return projectRepository.findAll().stream().map(p -> {
+        List<Project> projects = projectRepository.findAll();
+        List<Milestone> allMilestones = milestoneRepository.findAll();
+        List<Task> allTasks = taskRepository.findAll();
+
+        Map<UUID, List<Milestone>> milestonesByProject = allMilestones.stream()
+                .filter(m -> m.getProjectId() != null)
+                .collect(Collectors.groupingBy(Milestone::getProjectId));
+
+        Map<UUID, List<Task>> tasksByMilestone = allTasks.stream()
+                .filter(t -> t.getMilestoneId() != null)
+                .collect(Collectors.groupingBy(Task::getMilestoneId));
+
+        Map<UUID, List<Task>> tasksByProject = allTasks.stream()
+                .filter(t -> t.getProjectId() != null)
+                .collect(Collectors.groupingBy(Task::getProjectId));
+
+        DateTimeFormatter shortDateFmt = DateTimeFormatter.ofPattern("MMM dd").withZone(ZoneId.of("UTC"));
+        DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("hh:mm a").withZone(ZoneId.of("UTC"));
+
+        return projects.stream().map(p -> {
             ProjectBasicResponse resp = new ProjectBasicResponse();
             resp.setId(p.getId());
             resp.setName(p.getName());
             resp.setDescription(p.getDescription());
+            resp.setCategory(p.getCategory());
+            resp.setStatus(p.getStatus());
+            resp.setPriority(p.getPriority());
             resp.setTags(p.getTags());
-            
-            List<Task> tasks = taskRepository.findByProjectId(p.getId());
-            int total = tasks.size();
-            long completed = tasks.stream().filter(t -> "COMPLETED".equals(t.getStatus())).count();
-            resp.setPercentageToCompletion(total == 0 ? 0 : (int) ((completed * 100) / total));
+            resp.setStartAt(p.getStartAt());
+            resp.setDueAt(p.getDueAt());
+            resp.setCompletedAt(p.getCompletedAt());
+
+            List<Task> projectTasks = tasksByProject.getOrDefault(p.getId(), Collections.emptyList());
+            int totalTasks = projectTasks.size();
+            long completedTasks = projectTasks.stream().filter(t -> "COMPLETED".equalsIgnoreCase(t.getStatus())).count();
+            resp.setPercentageToCompletion(totalTasks == 0 ? 0 : (int) ((completedTasks * 100) / totalTasks));
+
+            List<Milestone> projectMilestones = milestonesByProject.getOrDefault(p.getId(), Collections.emptyList());
+            List<MilestoneRoadmapDto> roadmap = new ArrayList<>();
+
+            Milestone firstActiveMilestone = null;
+            Task firstImpendingTask = null;
+
+            for (Milestone m : projectMilestones) {
+                MilestoneRoadmapDto mDto = new MilestoneRoadmapDto();
+                mDto.setId(m.getId().toString());
+                mDto.setProjectId(p.getId().toString());
+                mDto.setName(m.getName());
+                mDto.setTitle(m.getName());
+                mDto.setDescription(m.getDescription());
+                mDto.setPriority(m.getPriority() != null ? m.getPriority() : "MEDIUM");
+                mDto.setDueAt(m.getDueAt());
+
+                if (m.getDueAt() != null) {
+                    mDto.setDueDate(shortDateFmt.format(m.getDueAt()));
+                } else {
+                    mDto.setDueDate("");
+                }
+
+                String mStatus = m.getStatus();
+                if ("COMPLETED".equalsIgnoreCase(mStatus) || "SHIPPED".equalsIgnoreCase(mStatus)) {
+                    mDto.setStatus("Shipped");
+                } else if ("PENDING".equalsIgnoreCase(mStatus) || "UPCOMING".equalsIgnoreCase(mStatus)) {
+                    mDto.setStatus("Upcoming");
+                } else {
+                    mDto.setStatus("Active");
+                }
+
+                if (firstActiveMilestone == null && !"Shipped".equals(mDto.getStatus())) {
+                    firstActiveMilestone = m;
+                }
+
+                List<Task> mTasks = tasksByMilestone.getOrDefault(m.getId(), Collections.emptyList());
+                List<MilestoneTaskDto> taskDtos = new ArrayList<>();
+                int mCompletedCount = 0;
+
+                for (Task t : mTasks) {
+                    MilestoneTaskDto tDto = new MilestoneTaskDto();
+                    tDto.setId(t.getId().toString());
+                    tDto.setMilestoneId(m.getId().toString());
+                    tDto.setTitle(t.getTitle());
+                    tDto.setDescription(t.getDescription());
+                    tDto.setStatus(t.getStatus());
+                    boolean isCompleted = "COMPLETED".equalsIgnoreCase(t.getStatus());
+                    tDto.setCompleted(isCompleted);
+                    if (isCompleted) mCompletedCount++;
+
+                    tDto.setDueAt(t.getDueAt());
+                    if (t.getDueAt() != null) {
+                        tDto.setDueTime(timeFmt.format(t.getDueAt()));
+                    } else {
+                        tDto.setDueTime("10:00 AM");
+                    }
+
+                    String prio = t.getPriority() != null ? t.getPriority().toLowerCase() : "normal";
+                    if (prio.startsWith("p1") || prio.contains("high")) prio = "high";
+                    else if (prio.startsWith("p2") || prio.contains("med")) prio = "medium";
+                    else prio = "normal";
+                    tDto.setPriority(prio);
+
+                    if (firstImpendingTask == null && !isCompleted) {
+                        firstImpendingTask = t;
+                    }
+
+                    taskDtos.add(tDto);
+                }
+
+                mDto.setTasks(taskDtos);
+                int mTotalCount = taskDtos.size();
+                mDto.setDetail(mDto.getStatus() + " · " + mCompletedCount + "/" + mTotalCount + " tasks verified");
+                roadmap.add(mDto);
+            }
+
+            resp.setMilestonesRoadmap(roadmap);
+
+            if (firstActiveMilestone != null) {
+                resp.setNextMilestone(firstActiveMilestone.getName());
+                resp.setNextMilestoneDue(firstActiveMilestone.getDueAt() != null ? shortDateFmt.format(firstActiveMilestone.getDueAt()) : "");
+            } else if (!roadmap.isEmpty()) {
+                resp.setNextMilestone(roadmap.get(0).getTitle());
+                resp.setNextMilestoneDue(roadmap.get(0).getDueDate());
+            }
+
+            if (firstImpendingTask != null) {
+                resp.setImpendingTask(firstImpendingTask.getTitle());
+                resp.setImpendingTaskDue(firstImpendingTask.getDueAt() != null ? "Due " + shortDateFmt.format(firstImpendingTask.getDueAt()) : "Due Soon");
+            } else if (firstActiveMilestone != null) {
+                resp.setImpendingTask(firstActiveMilestone.getName() + " deliverable");
+                resp.setImpendingTaskDue(firstActiveMilestone.getDueAt() != null ? "Due " + shortDateFmt.format(firstActiveMilestone.getDueAt()) : "Due Soon");
+            }
+
             return resp;
         }).collect(Collectors.toList());
     }

@@ -74,3 +74,4 @@ class CorsAndCookieConfigTest {
         assertEquals("http://localhost:5173", matchedOrigin, "Must match localhost origins");
     }
 }
+
