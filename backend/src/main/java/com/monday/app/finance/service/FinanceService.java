@@ -2,6 +2,8 @@ package com.monday.app.finance.service;
 
 import com.monday.app.event.entity.Event;
 import com.monday.app.event.repository.EventRepository;
+import com.monday.app.finance.dto.EmiConversionRequest;
+import com.monday.app.finance.dto.EmiConversionResult;
 import com.monday.app.finance.dto.SafeToSpend;
 import com.monday.app.finance.entity.*;
 import com.monday.app.finance.repository.*;
@@ -62,9 +64,15 @@ public class FinanceService {
     public BudgetCategory updateCategory(UUID id, BudgetCategory updated) {
         BudgetCategory existing = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("BudgetCategory", id));
-        existing.setName(updated.getName());
-        existing.setDescription(updated.getDescription());
-        existing.setStatus(updated.getStatus());
+        if (updated.getName() != null && !updated.getName().isBlank()) {
+            existing.setName(updated.getName().trim());
+        }
+        if (updated.getDescription() != null) {
+            existing.setDescription(updated.getDescription());
+        }
+        if (updated.getStatus() != null && !updated.getStatus().isBlank()) {
+            existing.setStatus(updated.getStatus());
+        }
         return categoryRepository.update(existing);
     }
 
@@ -239,7 +247,7 @@ public class FinanceService {
     }
 
     private static final Set<String> VALID_LINKED_MODULES = Set.of(
-            "PROJECTS", "VEHICLES", "ADMINISTRATION", "EVENTS", "GENERAL"
+            "PROJECTS", "VEHICLES", "ADMINISTRATION", "EVENTS", "GENERAL", "FINANCE"
     );
 
     // ─── Transactions ───────────────────────────────────────────────
@@ -257,8 +265,10 @@ public class FinanceService {
             }
         }
         if (txn.getCategoryId() != null) {
-            categoryRepository.findById(txn.getCategoryId())
-                    .orElseThrow(() -> new ResourceNotFoundException("BudgetCategory", txn.getCategoryId()));
+            Optional<BudgetCategory> catOpt = categoryRepository.findById(txn.getCategoryId());
+            if (catOpt.isEmpty()) {
+                txn.setCategoryId(null);
+            }
         }
         if (txn.getLinkedModule() != null && !VALID_LINKED_MODULES.contains(txn.getLinkedModule().toUpperCase())) {
             throw new IllegalArgumentException("Invalid linkedModule: " + txn.getLinkedModule() + ". Allowed: " + VALID_LINKED_MODULES);
@@ -277,6 +287,15 @@ public class FinanceService {
                     delta = delta.negate();
                 }
                 accountRepository.adjustBalance(accountId, delta);
+            } else {
+                txn.setAccountId(null);
+            }
+        }
+
+        if (txn.getCreditCardId() != null) {
+            Optional<CreditAccount> cardOpt = creditAccountRepository.findById(txn.getCreditCardId());
+            if (cardOpt.isEmpty()) {
+                txn.setCreditCardId(null);
             }
         }
 
@@ -284,6 +303,164 @@ public class FinanceService {
         processCreditCardTransactionOnCreate(txn);
 
         return transactionRepository.save(txn);
+    }
+
+    @Transactional
+    public List<Transaction> createTransactionsBulk(List<Transaction> transactions) {
+        if (transactions == null || transactions.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Transaction> created = new ArrayList<>();
+        for (Transaction txn : transactions) {
+            created.add(createTransaction(txn));
+        }
+        return created;
+    }
+
+    @Transactional
+    public EmiConversionResult convertToEmi(UUID transactionId, EmiConversionRequest request) {
+        Transaction original = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Transaction", transactionId));
+
+        if (!"EXPENSE".equalsIgnoreCase(original.getTransactionType())) {
+            throw new IllegalArgumentException("Only expense transactions can be converted to EMI");
+        }
+
+        CreditAccount card = findAssociatedCreditCard(original);
+        if (card == null) {
+            throw new IllegalArgumentException("Transaction was not made on a credit card and cannot be converted to EMI");
+        }
+
+        if ("EMI_INSTALLMENT".equalsIgnoreCase(original.getLinkedEntityType())
+                || "EMI_PARENT".equalsIgnoreCase(original.getLinkedEntityType())
+                || "EMI_FEE".equalsIgnoreCase(original.getLinkedEntityType())) {
+            throw new IllegalStateException("Transaction has already been converted to EMI or is an EMI installment");
+        }
+
+        int tenure = (request != null && request.tenureMonths() != null) ? request.tenureMonths() : 6;
+        if (tenure < 2 || tenure > 60) {
+            throw new IllegalArgumentException("EMI tenure must be between 2 and 60 months");
+        }
+
+        BigDecimal principal = original.getAmount();
+        if (principal == null || principal.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Transaction amount must be greater than zero for EMI conversion");
+        }
+
+        BigDecimal rate = (request != null && request.annualInterestRate() != null && request.annualInterestRate().compareTo(BigDecimal.ZERO) > 0)
+                ? request.annualInterestRate()
+                : BigDecimal.ZERO;
+        BigDecimal fee = (request != null && request.processingFee() != null && request.processingFee().compareTo(BigDecimal.ZERO) > 0)
+                ? request.processingFee()
+                : BigDecimal.ZERO;
+
+        BigDecimal monthlyInstallment;
+        BigDecimal totalPayable;
+        BigDecimal totalInterest;
+        List<BigDecimal> installmentAmounts = new ArrayList<>();
+
+        if (rate.compareTo(BigDecimal.ZERO) == 0) {
+            // 0% No Cost EMI
+            BigDecimal baseMonthly = principal.divide(BigDecimal.valueOf(tenure), 2, RoundingMode.FLOOR);
+            BigDecimal remainder = principal.subtract(baseMonthly.multiply(BigDecimal.valueOf(tenure)));
+            for (int i = 1; i <= tenure; i++) {
+                if (i == tenure) {
+                    installmentAmounts.add(baseMonthly.add(remainder));
+                } else {
+                    installmentAmounts.add(baseMonthly);
+                }
+            }
+            monthlyInstallment = baseMonthly;
+            totalPayable = principal;
+            totalInterest = BigDecimal.ZERO;
+        } else {
+            // Standard Reducing Balance EMI: E = P * r * (1 + r)^n / ((1 + r)^n - 1)
+            double monthlyRate = (rate.doubleValue() / 100.0) / 12.0;
+            double pDouble = principal.doubleValue();
+            double emiDouble = (pDouble * monthlyRate * Math.pow(1 + monthlyRate, tenure)) / (Math.pow(1 + monthlyRate, tenure) - 1);
+            monthlyInstallment = BigDecimal.valueOf(emiDouble).setScale(2, RoundingMode.HALF_UP);
+            totalPayable = monthlyInstallment.multiply(BigDecimal.valueOf(tenure));
+            totalInterest = totalPayable.subtract(principal);
+
+            for (int i = 1; i <= tenure; i++) {
+                installmentAmounts.add(monthlyInstallment);
+            }
+        }
+
+        LocalDate baseDate = (request != null && request.firstInstallmentDate() != null)
+                ? request.firstInstallmentDate()
+                : (original.getTransactionAt() != null
+                    ? original.getTransactionAt().atZone(ZoneId.systemDefault()).toLocalDate()
+                    : LocalDate.now());
+
+        UUID emiGroupId = UUID.randomUUID();
+        String originalDescription = original.getDescription() != null ? original.getDescription() : "Credit Card Purchase";
+
+        // Update the original transaction to become Installment 1 of N
+        original.setAmount(installmentAmounts.get(0));
+        original.setDescription(originalDescription + " (EMI 1/" + tenure + ")");
+        original.setNotes((original.getNotes() != null && !original.getNotes().isBlank() ? original.getNotes() + " | " : "")
+                + "EMI 1 of " + tenure + " · Converted from ₹" + principal.toPlainString() + " (" + card.getCardName() + " •• " + card.getLastFour() + ")");
+        original.setCreditCardId(card.getId());
+        original.setLinkedModule("FINANCE");
+        original.setLinkedEntityType("EMI_INSTALLMENT");
+        original.setLinkedEntityId(emiGroupId.toString());
+
+        Transaction updatedFirst = updateTransaction(original.getId(), original);
+
+        List<Transaction> createdInstallments = new ArrayList<>();
+        createdInstallments.add(updatedFirst);
+
+        // Create installments 2 .. N
+        for (int i = 2; i <= tenure; i++) {
+            LocalDate instDate = baseDate.plusMonths(i - 1);
+            Instant instInstant = instDate.atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant();
+
+            Transaction inst = new Transaction();
+            inst.setTransactionType("EXPENSE");
+            inst.setAmount(installmentAmounts.get(i - 1));
+            inst.setTransactionAt(instInstant);
+            inst.setCategoryId(original.getCategoryId());
+            inst.setCreditCardId(card.getId());
+            inst.setPaymentMethod(original.getPaymentMethod());
+            inst.setDescription(originalDescription + " (EMI " + i + "/" + tenure + ")");
+            inst.setNotes("EMI installment " + i + " of " + tenure + " · Plan: " + emiGroupId);
+            inst.setLinkedModule("FINANCE");
+            inst.setLinkedEntityType("EMI_INSTALLMENT");
+            inst.setLinkedEntityId(emiGroupId.toString());
+
+            createdInstallments.add(createTransaction(inst));
+        }
+
+        // If processing fee applies, log fee transaction
+        if (fee.compareTo(BigDecimal.ZERO) > 0) {
+            Transaction feeTx = new Transaction();
+            feeTx.setTransactionType("EXPENSE");
+            feeTx.setAmount(fee);
+            feeTx.setTransactionAt(updatedFirst.getTransactionAt());
+            feeTx.setCategoryId(original.getCategoryId());
+            feeTx.setCreditCardId(card.getId());
+            feeTx.setPaymentMethod(original.getPaymentMethod());
+            feeTx.setDescription("EMI Processing Fee - " + originalDescription);
+            feeTx.setNotes("One-time processing fee for " + tenure + "-month EMI conversion · Plan: " + emiGroupId);
+            feeTx.setLinkedModule("FINANCE");
+            feeTx.setLinkedEntityType("EMI_FEE");
+            feeTx.setLinkedEntityId(emiGroupId.toString());
+
+            createdInstallments.add(createTransaction(feeTx));
+        }
+
+        return new EmiConversionResult(
+                emiGroupId,
+                original.getId(),
+                tenure,
+                principal,
+                monthlyInstallment,
+                totalPayable,
+                totalInterest,
+                fee,
+                createdInstallments
+        );
     }
 
     @Transactional
@@ -519,8 +696,10 @@ public class FinanceService {
         } else {
             // Commitment already exists! Update commitment amount to reflect adjusted amount
             Map<String, Object> existing = existingList.get(0);
-            UUID commId = (UUID) existing.get("id");
-            BigDecimal oldAmount = (BigDecimal) existing.get("amount");
+            Object idObj = existing.get("id");
+            UUID commId = idObj instanceof UUID u ? u : UUID.fromString(idObj.toString());
+            Object amtObj = existing.get("amount");
+            BigDecimal oldAmount = amtObj instanceof BigDecimal b ? b : (amtObj != null ? new BigDecimal(amtObj.toString()) : BigDecimal.ZERO);
             BigDecimal newAmount = oldAmount.add(delta).max(BigDecimal.ZERO);
 
             jdbc.update("UPDATE finance_commitments SET amount = :amount, credit_card_id = :cardId, updated_at = CURRENT_TIMESTAMP WHERE id = :id",
@@ -565,8 +744,10 @@ public class FinanceService {
 
         if (!existingList.isEmpty()) {
             Map<String, Object> existing = existingList.get(0);
-            UUID commId = (UUID) existing.get("id");
-            BigDecimal oldAmount = (BigDecimal) existing.get("amount");
+            Object idObj = existing.get("id");
+            UUID commId = idObj instanceof UUID u ? u : UUID.fromString(idObj.toString());
+            Object amtObj = existing.get("amount");
+            BigDecimal oldAmount = amtObj instanceof BigDecimal b ? b : (amtObj != null ? new BigDecimal(amtObj.toString()) : BigDecimal.ZERO);
             BigDecimal newAmount = oldAmount.add(delta).max(BigDecimal.ZERO);
 
             if (newAmount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -838,6 +1019,7 @@ public class FinanceService {
 
             results.add(new SafeToSpend(
                     budget.getId(),
+                    budget.getName(),
                     category.getId(),
                     category.getName(),
                     budget.getAmount(),

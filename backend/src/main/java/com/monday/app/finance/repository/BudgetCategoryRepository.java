@@ -38,7 +38,10 @@ public class BudgetCategoryRepository {
 
     public BudgetCategory update(BudgetCategory category) {
         String sql = """
-                UPDATE budget_categories SET name = :name, description = :description, status = :status
+                UPDATE budget_categories
+                SET name = :name,
+                    description = :description,
+                    status = COALESCE(:status, status, 'ACTIVE')
                 WHERE id = :id RETURNING *
                 """;
         MapSqlParameterSource params = new MapSqlParameterSource()

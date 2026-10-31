@@ -1,6 +1,9 @@
 package com.monday.app.finance.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.monday.app.finance.dto.EmiConversionRequest;
+import com.monday.app.finance.dto.EmiConversionResult;
+import com.monday.app.finance.entity.BudgetCategory;
 import com.monday.app.finance.entity.Transaction;
 import com.monday.app.finance.service.FinanceService;
 import com.monday.app.shared.exception.GlobalExceptionHandler;
@@ -159,5 +162,133 @@ class FinanceControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value(true))
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void updateCategory_success() throws Exception {
+        UUID catId = UUID.randomUUID();
+        BudgetCategory updated = new BudgetCategory(catId, "Updated Dining", "New Description", "ACTIVE", Instant.now(), Instant.now());
+        when(financeService.updateCategory(eq(catId.toString()), any(BudgetCategory.class))).thenReturn(updated);
+
+        String payload = """
+                {
+                    "name": "Updated Dining",
+                    "description": "New Description"
+                }
+                """;
+
+        mockMvc.perform(put("/api/v1/finance/categories/" + catId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(catId.toString()))
+                .andExpect(jsonPath("$.name").value("Updated Dining"))
+                .andExpect(jsonPath("$.description").value("New Description"))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    void createTransactionsBulk_withArray_returnsCreatedTransactions() throws Exception {
+        UUID tx1 = UUID.randomUUID();
+        UUID tx2 = UUID.randomUUID();
+        Transaction t1 = new Transaction(tx1, "EXPENSE", new BigDecimal("150.00"), Instant.now(), null, "UPI", "Coffee", null, Instant.now(), Instant.now());
+        Transaction t2 = new Transaction(tx2, "EXPENSE", new BigDecimal("450.00"), Instant.now(), null, "UPI", "Books", null, Instant.now(), Instant.now());
+
+        when(financeService.createTransactionsBulk(anyList())).thenReturn(List.of(t1, t2));
+
+        String payload = """
+                [
+                    {
+                        "amount": 150.00,
+                        "transactionType": "EXPENSE",
+                        "description": "Coffee",
+                        "paymentMethod": "UPI"
+                    },
+                    {
+                        "amount": 450.00,
+                        "transactionType": "EXPENSE",
+                        "description": "Books",
+                        "paymentMethod": "UPI"
+                    }
+                ]
+                """;
+
+        mockMvc.perform(post("/api/v1/finance/transactions/bulk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].description").value("Coffee"))
+                .andExpect(jsonPath("$[1].description").value("Books"));
+    }
+
+    @Test
+    void createTransactionsBulk_withObjectWrapper_returnsCreatedTransactions() throws Exception {
+        UUID tx1 = UUID.randomUUID();
+        Transaction t1 = new Transaction(tx1, "EXPENSE", new BigDecimal("150.00"), Instant.now(), null, "UPI", "Coffee", null, Instant.now(), Instant.now());
+
+        when(financeService.createTransactionsBulk(anyList())).thenReturn(List.of(t1));
+
+        String payload = """
+                {
+                    "transactions": [
+                        {
+                            "amount": 150.00,
+                            "transactionType": "EXPENSE",
+                            "description": "Coffee",
+                            "paymentMethod": "UPI"
+                        }
+                    ]
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/finance/transactions/bulk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].description").value("Coffee"));
+    }
+
+    @Test
+    void convertToEmi_success() throws Exception {
+        UUID txId = UUID.randomUUID();
+        UUID emiGroupId = UUID.randomUUID();
+        UUID inst1 = txId;
+        UUID inst2 = UUID.randomUUID();
+        Transaction t1 = new Transaction(inst1, "EXPENSE", new BigDecimal("5000.00"), Instant.now(), null, "AMEX", "Laptop (EMI 1/2)", null, Instant.now(), Instant.now());
+        Transaction t2 = new Transaction(inst2, "EXPENSE", new BigDecimal("5000.00"), Instant.now(), null, "AMEX", "Laptop (EMI 2/2)", null, Instant.now(), Instant.now());
+
+        EmiConversionResult result = new EmiConversionResult(
+                emiGroupId,
+                txId,
+                2,
+                new BigDecimal("10000.00"),
+                new BigDecimal("5000.00"),
+                new BigDecimal("10000.00"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                List.of(t1, t2)
+        );
+
+        when(financeService.convertToEmi(eq(txId), any(EmiConversionRequest.class))).thenReturn(result);
+
+        String payload = """
+                {
+                    "tenureMonths": 2,
+                    "annualInterestRate": 0.0,
+                    "processingFee": 0.0
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/finance/transactions/" + txId + "/convert-to-emi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.emiGroupId").value(emiGroupId.toString()))
+                .andExpect(jsonPath("$.originalTransactionId").value(txId.toString()))
+                .andExpect(jsonPath("$.tenureMonths").value(2))
+                .andExpect(jsonPath("$.monthlyInstallment").value(5000.00))
+                .andExpect(jsonPath("$.installments.length()").value(2));
     }
 }

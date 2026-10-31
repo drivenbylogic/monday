@@ -1,9 +1,15 @@
 package com.monday.app.finance.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.monday.app.finance.dto.EmiConversionRequest;
+import com.monday.app.finance.dto.EmiConversionResult;
 import com.monday.app.finance.dto.SafeToSpend;
 import com.monday.app.finance.entity.*;
 import com.monday.app.finance.service.FinanceService;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,9 +25,16 @@ import java.util.UUID;
 public class FinanceController {
 
     private final FinanceService financeService;
+    private final ObjectMapper objectMapper;
+
+    @Autowired
+    public FinanceController(FinanceService financeService, ObjectMapper objectMapper) {
+        this.financeService = financeService;
+        this.objectMapper = objectMapper;
+    }
 
     public FinanceController(FinanceService financeService) {
-        this.financeService = financeService;
+        this(financeService, new ObjectMapper().findAndRegisterModules());
     }
 
     // --- Budget Categories ---
@@ -36,7 +49,7 @@ public class FinanceController {
     }
 
     @PutMapping("/categories/{id}")
-    public ResponseEntity<BudgetCategory> updateCategory(@PathVariable String id, @Valid @RequestBody BudgetCategory category) {
+    public ResponseEntity<BudgetCategory> updateCategory(@PathVariable String id, @RequestBody BudgetCategory category) {
         return ResponseEntity.ok(financeService.updateCategory(id, category));
     }
 
@@ -72,6 +85,29 @@ public class FinanceController {
     @PostMapping("/transactions")
     public ResponseEntity<Transaction> createTransaction(@Valid @RequestBody Transaction transaction) {
         return ResponseEntity.status(HttpStatus.CREATED).body(financeService.createTransaction(transaction));
+    }
+
+    @PostMapping("/transactions/bulk")
+    public ResponseEntity<List<Transaction>> createTransactionsBulk(@RequestBody Object payload) {
+        ObjectMapper mapper = (this.objectMapper != null ? this.objectMapper.copy() : new ObjectMapper().findAndRegisterModules())
+                .configure(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT, true)
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        List<Transaction> transactions;
+        if (payload instanceof List<?> list) {
+            transactions = mapper.convertValue(list, new TypeReference<List<Transaction>>() {});
+        } else if (payload instanceof Map<?, ?> map && map.containsKey("transactions")) {
+            transactions = mapper.convertValue(map.get("transactions"), new TypeReference<List<Transaction>>() {});
+        } else {
+            throw new IllegalArgumentException("Payload must be a list of transactions or an object containing a 'transactions' array");
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(financeService.createTransactionsBulk(transactions));
+    }
+
+    @PostMapping("/transactions/{id}/convert-to-emi")
+    public ResponseEntity<EmiConversionResult> convertToEmi(
+            @PathVariable UUID id,
+            @Valid @RequestBody EmiConversionRequest request) {
+        return ResponseEntity.ok(financeService.convertToEmi(id, request));
     }
 
     @GetMapping("/transactions")

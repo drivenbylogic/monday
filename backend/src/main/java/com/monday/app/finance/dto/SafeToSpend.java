@@ -10,6 +10,7 @@ import java.util.UUID;
  */
 public record SafeToSpend(
         UUID budgetId,
+        String budgetName,
         UUID categoryId,
         String categoryName,
         BigDecimal budgetAmount,
@@ -19,4 +20,19 @@ public record SafeToSpend(
         int remainingDays,
         LocalDate periodStart,
         LocalDate periodEnd
-) {}
+) {
+    public SafeToSpend(
+            UUID budgetId,
+            UUID categoryId,
+            String categoryName,
+            BigDecimal budgetAmount,
+            BigDecimal spentAmount,
+            BigDecimal remainingBudget,
+            BigDecimal dailySafeToSpend,
+            int remainingDays,
+            LocalDate periodStart,
+            LocalDate periodEnd
+    ) {
+        this(budgetId, null, categoryId, categoryName, budgetAmount, spentAmount, remainingBudget, dailySafeToSpend, remainingDays, periodStart, periodEnd);
+    }
+}

@@ -80,18 +80,37 @@ public class ProjectService {
         Project existing = projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", id));
 
-        existing.setName(updated.getName());
-        existing.setDescription(updated.getDescription());
-        existing.setCategory(updated.getCategory());
-        existing.setStatus(updated.getStatus());
-        existing.setPriority(updated.getPriority());
-        existing.setStartAt(updated.getStartAt());
-        existing.setDueAt(updated.getDueAt());
+        if (updated.getName() != null && !updated.getName().isBlank()) {
+            existing.setName(updated.getName());
+        }
+        if (updated.getDescription() != null) {
+            existing.setDescription(updated.getDescription());
+        }
+        if (updated.getCategory() != null && !updated.getCategory().isBlank()) {
+            existing.setCategory(updated.getCategory());
+        }
+        if (updated.getStatus() != null && !updated.getStatus().isBlank()) {
+            existing.setStatus(updated.getStatus());
+        }
+        if (updated.getPriority() != null && !updated.getPriority().isBlank()) {
+            existing.setPriority(updated.getPriority());
+        } else if (existing.getPriority() == null || existing.getPriority().isBlank()) {
+            existing.setPriority("MEDIUM");
+        }
+        if (updated.getTags() != null) {
+            existing.setTags(updated.getTags());
+        }
+        if (updated.getStartAt() != null) {
+            existing.setStartAt(updated.getStartAt());
+        }
+        if (updated.getDueAt() != null) {
+            existing.setDueAt(updated.getDueAt());
+        }
 
         // Auto-set completedAt when status transitions to COMPLETED
-        if ("COMPLETED".equals(updated.getStatus()) && existing.getCompletedAt() == null) {
+        if ("COMPLETED".equalsIgnoreCase(existing.getStatus()) && existing.getCompletedAt() == null) {
             existing.setCompletedAt(Instant.now());
-        } else if (!"COMPLETED".equals(updated.getStatus())) {
+        } else if (!"COMPLETED".equalsIgnoreCase(existing.getStatus())) {
             existing.setCompletedAt(null);
         }
 
