@@ -95,10 +95,15 @@ public class FinanceController {
         List<Transaction> transactions;
         if (payload instanceof List<?> list) {
             transactions = mapper.convertValue(list, new TypeReference<List<Transaction>>() {});
-        } else if (payload instanceof Map<?, ?> map && map.containsKey("transactions")) {
-            transactions = mapper.convertValue(map.get("transactions"), new TypeReference<List<Transaction>>() {});
+        } else if (payload instanceof Map<?, ?> map) {
+            if (map.containsKey("transactions")) {
+                transactions = mapper.convertValue(map.get("transactions"), new TypeReference<List<Transaction>>() {});
+            } else {
+                Transaction single = mapper.convertValue(map, Transaction.class);
+                transactions = List.of(single);
+            }
         } else {
-            throw new IllegalArgumentException("Payload must be a list of transactions or an object containing a 'transactions' array");
+            throw new IllegalArgumentException("Payload must be a list of transactions or a transaction object");
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(financeService.createTransactionsBulk(transactions));
     }
@@ -183,8 +188,9 @@ public class FinanceController {
     // --- Commitments ---
     @GetMapping("/commitments/impending")
     public ResponseEntity<List<Map<String, Object>>> getImpendingCommitments(
-            @RequestParam(required = false, defaultValue = "30") int windowDays) {
-        return ResponseEntity.ok(financeService.getImpendingCommitments(windowDays));
+            @RequestParam(required = false, defaultValue = "30") int windowDays,
+            @RequestParam(required = false) String cycle) {
+        return ResponseEntity.ok(financeService.getImpendingCommitments(windowDays, cycle));
     }
 
     @PostMapping("/commitments/settle")

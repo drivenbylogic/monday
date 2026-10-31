@@ -487,7 +487,7 @@ public class HomeDashboardService {
                        fa.account_name, fc.is_urgent, fc.status
                 FROM finance_commitments fc
                 LEFT JOIN finance_accounts fa ON fc.account_id = fa.id
-                WHERE fc.status != 'PAID'
+                WHERE fc.status = 'PENDING'
                 ORDER BY fc.due_date ASC
                 """;
 

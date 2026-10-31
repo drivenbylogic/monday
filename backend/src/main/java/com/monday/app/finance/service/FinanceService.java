@@ -396,58 +396,70 @@ public class FinanceService {
         UUID emiGroupId = UUID.randomUUID();
         String originalDescription = original.getDescription() != null ? original.getDescription() : "Credit Card Purchase";
 
-        // Update the original transaction to become Installment 1 of N
-        original.setAmount(installmentAmounts.get(0));
-        original.setDescription(originalDescription + " (EMI 1/" + tenure + ")");
-        original.setNotes((original.getNotes() != null && !original.getNotes().isBlank() ? original.getNotes() + " | " : "")
-                + "EMI 1 of " + tenure + " · Converted from ₹" + principal.toPlainString() + " (" + card.getCardName() + " •• " + card.getLastFour() + ")");
-        original.setCreditCardId(card.getId());
-        original.setLinkedModule("FINANCE");
-        original.setLinkedEntityType("EMI_INSTALLMENT");
-        original.setLinkedEntityId(emiGroupId.toString());
+        // The original transaction was a full credit card charge.
+        // Once converted to EMI, it is replaced by installment commitments.
+        // Revert the original credit card balance & commitment impact, then delete the original transaction.
+        processCreditCardTransactionOnDelete(original);
+        transactionRepository.deleteById(original.getId());
 
-        Transaction updatedFirst = updateTransaction(original.getId(), original);
-
-        List<Transaction> createdInstallments = new ArrayList<>();
-        createdInstallments.add(updatedFirst);
-
-        // Create installments 2 .. N
-        for (int i = 2; i <= tenure; i++) {
+        // Record ALL installments 1 .. tenure as impending commitments in finance_commitments
+        // (None are transactions until the user explicitly settles them via Settle action)
+        for (int i = 1; i <= tenure; i++) {
             LocalDate instDate = baseDate.plusMonths(i - 1);
-            Instant instInstant = instDate.atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant();
+            BigDecimal instAmount = installmentAmounts.get(i - 1);
+            String instName = card.getCardName() + " (EMI " + i + "/" + tenure + ") - " + originalDescription;
 
-            Transaction inst = new Transaction();
-            inst.setTransactionType("EXPENSE");
-            inst.setAmount(installmentAmounts.get(i - 1));
-            inst.setTransactionAt(instInstant);
-            inst.setCategoryId(original.getCategoryId());
-            inst.setCreditCardId(card.getId());
-            inst.setPaymentMethod(original.getPaymentMethod());
-            inst.setDescription(originalDescription + " (EMI " + i + "/" + tenure + ")");
-            inst.setNotes("EMI installment " + i + " of " + tenure + " · Plan: " + emiGroupId);
-            inst.setLinkedModule("FINANCE");
-            inst.setLinkedEntityType("EMI_INSTALLMENT");
-            inst.setLinkedEntityId(emiGroupId.toString());
+            UUID commitmentId = UUID.randomUUID();
+            UUID eventId = UUID.randomUUID();
+            LocalDate eventDate = instDate.minusDays(3);
+            if (eventDate.isBefore(LocalDate.now())) {
+                eventDate = LocalDate.now();
+            }
 
-            createdInstallments.add(createTransaction(inst));
+            Event event = new Event();
+            event.setId(eventId);
+            event.setTitle("EMI Due: " + card.getCardName() + " (" + i + "/" + tenure + ")");
+            event.setDescription("Credit card EMI installment " + i + " of " + tenure + " (₹" + instAmount.toPlainString() + ") for " + originalDescription + " due on " + instDate + ".");
+            event.setEventType("FINANCE");
+            event.setStartAt(eventDate.atTime(9, 0).atZone(ZoneId.systemDefault()).toInstant());
+            event.setEndAt(eventDate.atTime(10, 0).atZone(ZoneId.systemDefault()).toInstant());
+            event.setStatus("SCHEDULED");
+            event.setAllDay(false);
+            event.setRecurring(false);
+            event.setLocation("Online Banking / Auto-Debit");
+            try {
+                eventRepository.save(event);
+            } catch (Exception ignored) {}
+
+            boolean isUrgent = ChronoUnit.DAYS.between(LocalDate.now(), instDate) <= 7 && !instDate.isBefore(LocalDate.now());
+            String insertSql = """
+                INSERT INTO finance_commitments (id, name, due_date, amount, account_id, credit_card_id, event_id, is_urgent, status)
+                VALUES (:id, :name, :dueDate, :amount, NULL, :cardId, :eventId, :isUrgent, 'PENDING')
+            """;
+            jdbc.update(insertSql, new MapSqlParameterSource()
+                    .addValue("id", commitmentId)
+                    .addValue("name", instName)
+                    .addValue("dueDate", Date.valueOf(instDate))
+                    .addValue("amount", instAmount)
+                    .addValue("cardId", card.getId())
+                    .addValue("eventId", eventId)
+                    .addValue("isUrgent", isUrgent));
         }
 
-        // If processing fee applies, log fee transaction
+        // If processing fee applies, record as an impending commitment for the first month
         if (fee.compareTo(BigDecimal.ZERO) > 0) {
-            Transaction feeTx = new Transaction();
-            feeTx.setTransactionType("EXPENSE");
-            feeTx.setAmount(fee);
-            feeTx.setTransactionAt(updatedFirst.getTransactionAt());
-            feeTx.setCategoryId(original.getCategoryId());
-            feeTx.setCreditCardId(card.getId());
-            feeTx.setPaymentMethod(original.getPaymentMethod());
-            feeTx.setDescription("EMI Processing Fee - " + originalDescription);
-            feeTx.setNotes("One-time processing fee for " + tenure + "-month EMI conversion · Plan: " + emiGroupId);
-            feeTx.setLinkedModule("FINANCE");
-            feeTx.setLinkedEntityType("EMI_FEE");
-            feeTx.setLinkedEntityId(emiGroupId.toString());
-
-            createdInstallments.add(createTransaction(feeTx));
+            String feeName = card.getCardName() + " (EMI Fee) - " + originalDescription;
+            UUID feeCommId = UUID.randomUUID();
+            String insertFeeSql = """
+                INSERT INTO finance_commitments (id, name, due_date, amount, account_id, credit_card_id, event_id, is_urgent, status)
+                VALUES (:id, :name, :dueDate, :amount, NULL, :cardId, NULL, false, 'PENDING')
+            """;
+            jdbc.update(insertFeeSql, new MapSqlParameterSource()
+                    .addValue("id", feeCommId)
+                    .addValue("name", feeName)
+                    .addValue("dueDate", Date.valueOf(baseDate))
+                    .addValue("amount", fee)
+                    .addValue("cardId", card.getId()));
         }
 
         return new EmiConversionResult(
@@ -459,7 +471,7 @@ public class FinanceService {
                 totalPayable,
                 totalInterest,
                 fee,
-                createdInstallments
+                Collections.emptyList()
         );
     }
 
@@ -1440,18 +1452,68 @@ public class FinanceService {
     }
 
     public List<Map<String, Object>> getImpendingCommitments(int windowDays) {
-        String sql = """
-            SELECT id, name, DATE_PART('day', due_date::timestamp - CURRENT_DATE::timestamp) as "dueDays",
-                   to_char(due_date, 'Mon DD, YYYY') as "dueDate",
-                   amount, account_id as account, credit_card_id as "creditCardId",
-                   CASE WHEN is_urgent = true OR due_date <= CURRENT_DATE + INTERVAL '7 days' THEN true ELSE false END as "isUrgent"
-            FROM finance_commitments
-            WHERE due_date <= CURRENT_DATE + (:windowDays || ' days')::interval
-              AND status = 'PENDING'
-              AND amount > 0
-            ORDER BY due_date
-        """;
-        return jdbc.queryForList(sql, new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("windowDays", windowDays));
+        return getImpendingCommitments(windowDays, null);
+    }
+
+    public List<Map<String, Object>> getImpendingCommitments(Integer windowDays, String cycle) {
+        String currentCycle = YearMonth.now().toString();
+        boolean isAll = "all".equalsIgnoreCase(cycle);
+        String targetCycle = (cycle != null && !cycle.isBlank() && !isAll) ? cycle : currentCycle;
+        if (!targetCycle.matches("^\\d{4}-\\d{2}$")) {
+            targetCycle = currentCycle;
+        }
+        boolean isCurrentMonth = targetCycle.equals(currentCycle);
+
+        String sql;
+        MapSqlParameterSource params = new MapSqlParameterSource();
+
+        if (isAll) {
+            sql = """
+                SELECT fc.id, fc.name,
+                       DATE_PART('day', fc.due_date::timestamp - CURRENT_DATE::timestamp) as "dueDays",
+                       to_char(fc.due_date, 'Mon DD, YYYY') as "dueDate",
+                       to_char(fc.due_date, 'YYYY-MM-DD') as "rawDueDate",
+                       to_char(fc.due_date, 'YYYY-MM') as "cycle",
+                       fc.amount, fc.account_id as account, fc.credit_card_id as "creditCardId",
+                       ca.card_name as "cardName", ca.last_four as "lastFour",
+                       CASE WHEN fc.is_urgent = true OR fc.due_date <= CURRENT_DATE + INTERVAL '7 days' THEN true ELSE false END as "isUrgent"
+                FROM finance_commitments fc
+                LEFT JOIN credit_accounts ca ON fc.credit_card_id = ca.id
+                WHERE fc.status = 'PENDING'
+                  AND fc.amount > 0
+                ORDER BY fc.due_date ASC
+            """;
+        } else {
+            YearMonth ym = YearMonth.parse(targetCycle);
+            LocalDate startOfMonth = ym.atDay(1);
+            params.addValue("cycle", targetCycle);
+            String cycleFilter;
+            if (isCurrentMonth) {
+                params.addValue("startOfMonth", Date.valueOf(startOfMonth));
+                cycleFilter = "(to_char(fc.due_date, 'YYYY-MM') = :cycle OR fc.due_date < :startOfMonth)";
+            } else {
+                cycleFilter = "to_char(fc.due_date, 'YYYY-MM') = :cycle";
+            }
+
+            sql = """
+                SELECT fc.id, fc.name,
+                       DATE_PART('day', fc.due_date::timestamp - CURRENT_DATE::timestamp) as "dueDays",
+                       to_char(fc.due_date, 'Mon DD, YYYY') as "dueDate",
+                       to_char(fc.due_date, 'YYYY-MM-DD') as "rawDueDate",
+                       to_char(fc.due_date, 'YYYY-MM') as "cycle",
+                       fc.amount, fc.account_id as account, fc.credit_card_id as "creditCardId",
+                       ca.card_name as "cardName", ca.last_four as "lastFour",
+                       CASE WHEN fc.is_urgent = true OR fc.due_date <= CURRENT_DATE + INTERVAL '7 days' THEN true ELSE false END as "isUrgent"
+                FROM finance_commitments fc
+                LEFT JOIN credit_accounts ca ON fc.credit_card_id = ca.id
+                WHERE fc.status = 'PENDING'
+                  AND fc.amount > 0
+                  AND %s
+                ORDER BY fc.due_date ASC
+            """.formatted(cycleFilter);
+        }
+
+        return jdbc.queryForList(sql, params);
     }
 
     @Transactional
@@ -1469,6 +1531,7 @@ public class FinanceService {
             new MapSqlParameterSource("id", commitmentId));
 
         String commName = "Commitment Settlement";
+        UUID commCardId = null;
         if (!commList.isEmpty()) {
             Map<String, Object> comm = commList.get(0);
             if (comm.get("name") != null) {
@@ -1479,6 +1542,11 @@ public class FinanceService {
                     new MapSqlParameterSource("eventId", comm.get("event_id").toString()));
             }
             if (comm.get("credit_card_id") != null) {
+                try {
+                    Object cId = comm.get("credit_card_id");
+                    commCardId = cId instanceof UUID u ? u : UUID.fromString(cId.toString());
+                } catch (Exception ignored) {}
+
                 jdbc.update("UPDATE credit_accounts SET current_balance = GREATEST(0, current_balance - :amount), updated_at = CURRENT_TIMESTAMP WHERE id = :cardId::uuid",
                     new MapSqlParameterSource()
                         .addValue("cardId", comm.get("credit_card_id").toString())
@@ -1499,14 +1567,15 @@ public class FinanceService {
         String desc = body.get("merchant") != null ? body.get("merchant").toString() : (commName + " (Settled)");
         String txSql = """
             INSERT INTO transactions (id, transaction_type, amount, transaction_at, description, notes, linked_module, linked_entity_id, linked_entity_type, account_id, payment_method, credit_card_id)
-            VALUES (:id, 'EXPENSE', :amount, CURRENT_TIMESTAMP, :desc, 'Settled commitment', 'FINANCE', :commId, 'COMMITMENT', :accountId, 'NET_BANKING', NULL)
+            VALUES (:id, 'EXPENSE', :amount, CURRENT_TIMESTAMP, :desc, 'Settled commitment', 'FINANCE', :commId, 'COMMITMENT', :accountId, 'NET_BANKING', :creditCardId)
         """;
         jdbc.update(txSql, new MapSqlParameterSource()
             .addValue("id", txId)
             .addValue("amount", settleAmount)
             .addValue("desc", desc)
             .addValue("commId", commitmentId)
-            .addValue("accountId", sourceAccountUuid));
+            .addValue("accountId", sourceAccountUuid)
+            .addValue("creditCardId", commCardId));
 
         BigDecimal updatedReserves = jdbc.queryForObject("SELECT COALESCE(SUM(balance), 0) FROM finance_accounts",
             new MapSqlParameterSource(), BigDecimal.class);

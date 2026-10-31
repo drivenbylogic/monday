@@ -139,17 +139,13 @@ class FinanceServiceTest {
         assertEquals(new BigDecimal("10000.00"), result.monthlyInstallment());
         assertEquals(new BigDecimal("60000.00"), result.totalPayable());
         assertEquals(BigDecimal.ZERO, result.totalInterest());
-        assertEquals(6, result.installments().size());
+        assertTrue(result.installments().isEmpty());
 
-        // Installment 1 is the updated original
-        Transaction inst1 = result.installments().get(0);
-        assertEquals(txId, inst1.getId());
-        assertEquals(new BigDecimal("10000.00"), inst1.getAmount());
-        assertTrue(inst1.getDescription().contains("EMI 1/6"));
-        assertEquals("EMI_INSTALLMENT", inst1.getLinkedEntityType());
-
-        // Verify remaining 5 were created
-        verify(transactionRepository, times(5)).save(any(Transaction.class));
+        // Verify original transaction was deleted/reverted from transactions
+        verify(transactionRepository).deleteById(txId);
+        // Verify all 6 installments were recorded as impending commitments, NOT premature transactions
+        verify(transactionRepository, never()).save(argThat(t -> "EMI_INSTALLMENT".equals(t.getLinkedEntityType())));
+        verify(jdbc, times(6)).update(contains("INSERT INTO finance_commitments"), any(org.springframework.jdbc.core.namedparam.MapSqlParameterSource.class));
     }
 
     @Test
@@ -188,8 +184,10 @@ class FinanceServiceTest {
         assertTrue(result.monthlyInstallment().compareTo(new BigDecimal("4000.00")) > 0);
         assertTrue(result.totalInterest().compareTo(BigDecimal.ZERO) > 0);
         assertEquals(new BigDecimal("199.00"), result.processingFee());
-        // 3 installments + 1 fee transaction = 4 total transactions created/updated
-        assertEquals(4, result.installments().size());
+        // All installments and fee are recorded as impending commitments (0 premature transactions)
+        assertTrue(result.installments().isEmpty());
+        verify(transactionRepository).deleteById(txId);
+        verify(jdbc, times(4)).update(contains("INSERT INTO finance_commitments"), any(org.springframework.jdbc.core.namedparam.MapSqlParameterSource.class));
     }
 
     @Test
