@@ -60,17 +60,23 @@ public class VehicleServiceItemRepository {
     }
 
     private MapSqlParameterSource toParams(UUID id, VehicleServiceItem item) {
+        String itemName = item.getItemName() != null && !item.getItemName().isBlank() ? item.getItemName().trim() : "Consumable / Part";
+        java.math.BigDecimal qty = item.getQuantity() != null && item.getQuantity().compareTo(java.math.BigDecimal.ZERO) > 0 ? item.getQuantity() : java.math.BigDecimal.ONE;
+        java.math.BigDecimal cost = item.getItemCost() != null && item.getItemCost().compareTo(java.math.BigDecimal.ZERO) >= 0 ? item.getItemCost() : java.math.BigDecimal.ZERO;
+        Integer months = item.getReplacementIntervalMonths() != null && item.getReplacementIntervalMonths() > 0 ? item.getReplacementIntervalMonths() : null;
+        Integer km = item.getReplacementIntervalKm() != null && item.getReplacementIntervalKm() > 0 ? item.getReplacementIntervalKm() : null;
+
         return new MapSqlParameterSource()
                 .addValue("id", id)
                 .addValue("serviceRecordId", item.getServiceRecordId())
-                .addValue("itemName", item.getItemName())
-                .addValue("category", item.getCategory() != null ? item.getCategory() : "PART")
+                .addValue("itemName", itemName)
+                .addValue("category", item.getCategory() != null && !item.getCategory().isBlank() ? item.getCategory().trim() : "PART")
                 .addValue("brandSpec", item.getBrandSpec())
-                .addValue("quantity", item.getQuantity())
-                .addValue("unit", item.getUnit())
-                .addValue("itemCost", item.getItemCost())
-                .addValue("months", item.getReplacementIntervalMonths())
-                .addValue("km", item.getReplacementIntervalKm())
+                .addValue("quantity", qty)
+                .addValue("unit", item.getUnit() != null ? item.getUnit() : "pcs")
+                .addValue("itemCost", cost)
+                .addValue("months", months)
+                .addValue("km", km)
                 .addValue("notes", item.getNotes());
     }
 
@@ -82,16 +88,16 @@ public class VehicleServiceItemRepository {
             return new VehicleServiceItem(
                     UUID.fromString(rs.getString("id")),
                     UUID.fromString(rs.getString("service_record_id")),
-                    rs.getString("item_name"),
-                    rs.getString("category"),
+                    rs.getString("item_name") != null ? rs.getString("item_name") : "Consumable / Part",
+                    rs.getString("category") != null ? rs.getString("category") : "PART",
                     rs.getString("brand_spec"),
-                    rs.getBigDecimal("quantity"),
+                    rs.getBigDecimal("quantity") != null ? rs.getBigDecimal("quantity") : java.math.BigDecimal.ONE,
                     rs.getString("unit"),
-                    rs.getBigDecimal("item_cost"),
+                    rs.getBigDecimal("item_cost") != null ? rs.getBigDecimal("item_cost") : java.math.BigDecimal.ZERO,
                     rs.getObject("replacement_interval_months") != null ? rs.getInt("replacement_interval_months") : null,
                     rs.getObject("replacement_interval_km") != null ? rs.getInt("replacement_interval_km") : null,
                     rs.getString("notes"),
-                    rs.getTimestamp("created_at").toInstant()
+                    rs.getTimestamp("created_at") != null ? rs.getTimestamp("created_at").toInstant() : java.time.Instant.now()
             );
         }
     }

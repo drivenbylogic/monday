@@ -197,4 +197,88 @@ class VehicleControllerTest {
                 .andExpect(jsonPath("$[0].eventType").value("SERVICE"))
                 .andExpect(jsonPath("$[0].title").value("Track Brake Fluid Flush"));
     }
+
+    @Test
+    void createServiceRecord_withAliasesAndEmptySchedule_succeeds() throws Exception {
+        UUID vehicleId = UUID.randomUUID();
+        UUID recordId = UUID.randomUUID();
+        ServiceRecordDto recordDto = new ServiceRecordDto(
+                recordId, vehicleId, LocalDate.of(2026, 10, 20), 8500, "Oil & Filter Service",
+                "Periodic maintenance", new BigDecimal("350.00"), new BigDecimal("200.00"),
+                new BigDecimal("150.00"), "Porsche Centre", "Clean inspection", true, false,
+                "tx-123", List.of(), null, null
+        );
+
+        when(serviceLedgerService.createServiceRecord(eq(vehicleId), any())).thenReturn(recordDto);
+
+        // Payload with aliases ("date", "odometerKm", "amount", "serviceProvider", "linkedScheduleId": "")
+        String payload = """
+                {
+                    "date": "2026-10-20",
+                    "odometerKm": 8500,
+                    "serviceType": "Oil & Filter Service",
+                    "description": "Periodic maintenance",
+                    "amount": 350.00,
+                    "partsCost": 200.00,
+                    "laborCost": 150.00,
+                    "serviceProvider": "Porsche Centre",
+                    "notes": "Clean inspection",
+                    "verified": true,
+                    "isUpcoming": false,
+                    "syncToFinance": true,
+                    "linkedScheduleId": "",
+                    "items": [
+                        {
+                            "name": "Engine Oil 0W-40",
+                            "category": "OIL",
+                            "price": 120.00,
+                            "quantity": 4.5
+                        }
+                    ]
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/vehicles/" + vehicleId + "/service-records")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(recordId.toString()))
+                .andExpect(jsonPath("$.serviceType").value("Oil & Filter Service"))
+                .andExpect(jsonPath("$.cost").value(350.00));
+
+        verify(serviceLedgerService).createServiceRecord(eq(vehicleId), any());
+    }
+
+    @Test
+    void updateServiceRecord_succeeds() throws Exception {
+        UUID vehicleId = UUID.randomUUID();
+        UUID recordId = UUID.randomUUID();
+        ServiceRecordDto recordDto = new ServiceRecordDto(
+                recordId, vehicleId, LocalDate.of(2026, 10, 25), 8900, "Major Inspection",
+                "Updated details", new BigDecimal("600.00"), new BigDecimal("400.00"),
+                new BigDecimal("200.00"), "Specialist Workshop", "Done", true, false,
+                "tx-456", List.of(), null, null
+        );
+
+        when(serviceLedgerService.updateServiceRecord(eq(recordId), any())).thenReturn(recordDto);
+
+        String payload = """
+                {
+                    "serviceType": "Major Inspection",
+                    "kmAtService": 8900,
+                    "cost": 600.00,
+                    "linkedScheduleId": ""
+                }
+                """;
+
+        mockMvc.perform(put("/api/v1/vehicles/" + vehicleId + "/service-records/" + recordId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(recordId.toString()))
+                .andExpect(jsonPath("$.serviceType").value("Major Inspection"))
+                .andExpect(jsonPath("$.kmAtService").value(8900));
+
+        verify(serviceLedgerService).updateServiceRecord(eq(recordId), any());
+    }
 }

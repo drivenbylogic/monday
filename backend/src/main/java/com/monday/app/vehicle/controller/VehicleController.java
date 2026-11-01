@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/vehicles")
+@RequestMapping({"/api/v1/vehicles", "/api/vehicles"})
 public class VehicleController {
 
     private final VehicleService vehicleService;
@@ -277,15 +277,23 @@ public class VehicleController {
         return ResponseEntity.ok(serviceLedgerService.getServiceRecord(recordId));
     }
 
-    @PostMapping("/{vehicleId}/service-records")
+    @PostMapping(value = {"/{vehicleId}/service-records", "/{vehicleId}/service"})
     public ResponseEntity<ServiceRecordDto> createServiceRecord(
             @PathVariable UUID vehicleId,
             @RequestBody CreateServiceRecordRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(serviceLedgerService.createServiceRecord(vehicleId, req));
     }
 
-    @PutMapping("/{vehicleId}/service-records/{recordId}")
+    @PutMapping(value = {"/{vehicleId}/service-records/{recordId}", "/{vehicleId}/service/{recordId}"})
     public ResponseEntity<ServiceRecordDto> updateServiceRecord(
+            @PathVariable UUID vehicleId,
+            @PathVariable UUID recordId,
+            @RequestBody UpdateServiceRecordRequest req) {
+        return ResponseEntity.ok(serviceLedgerService.updateServiceRecord(recordId, req));
+    }
+
+    @PatchMapping(value = {"/{vehicleId}/service-records/{recordId}", "/{vehicleId}/service/{recordId}"})
+    public ResponseEntity<ServiceRecordDto> patchServiceRecord(
             @PathVariable UUID vehicleId,
             @PathVariable UUID recordId,
             @RequestBody UpdateServiceRecordRequest req) {

@@ -73,16 +73,19 @@ public class VehicleServiceRecordRepository {
             BigDecimal labor = r.getLaborCost() != null ? r.getLaborCost() : BigDecimal.ZERO;
             totalCost = parts.add(labor);
         }
+        if (totalCost.compareTo(BigDecimal.ZERO) < 0) {
+            totalCost = BigDecimal.ZERO;
+        }
         return new MapSqlParameterSource()
                 .addValue("id", id)
                 .addValue("vehicleId", r.getVehicleId())
-                .addValue("serviceDate", Date.valueOf(r.getServiceDate()))
-                .addValue("kmAtService", r.getKmAtService())
-                .addValue("serviceType", r.getServiceType())
+                .addValue("serviceDate", r.getServiceDate() != null ? Date.valueOf(r.getServiceDate()) : Date.valueOf(java.time.LocalDate.now()))
+                .addValue("kmAtService", r.getKmAtService() != null && r.getKmAtService() >= 0 ? r.getKmAtService() : null)
+                .addValue("serviceType", r.getServiceType() != null && !r.getServiceType().isBlank() ? r.getServiceType().trim() : "Scheduled Service")
                 .addValue("description", r.getDescription())
                 .addValue("cost", totalCost)
-                .addValue("partsCost", r.getPartsCost() != null ? r.getPartsCost() : BigDecimal.ZERO)
-                .addValue("laborCost", r.getLaborCost() != null ? r.getLaborCost() : BigDecimal.ZERO)
+                .addValue("partsCost", r.getPartsCost() != null && r.getPartsCost().compareTo(BigDecimal.ZERO) >= 0 ? r.getPartsCost() : BigDecimal.ZERO)
+                .addValue("laborCost", r.getLaborCost() != null && r.getLaborCost().compareTo(BigDecimal.ZERO) >= 0 ? r.getLaborCost() : BigDecimal.ZERO)
                 .addValue("performedBy", r.getPerformedBy())
                 .addValue("notes", r.getNotes())
                 .addValue("verified", Boolean.TRUE.equals(r.getVerified()))
@@ -97,20 +100,20 @@ public class VehicleServiceRecordRepository {
             VehicleServiceRecord rec = new VehicleServiceRecord(
                     UUID.fromString(rs.getString("id")),
                     UUID.fromString(rs.getString("vehicle_id")),
-                    rs.getDate("service_date").toLocalDate(),
+                    rs.getDate("service_date") != null ? rs.getDate("service_date").toLocalDate() : java.time.LocalDate.now(),
                     rs.getObject("km_at_service") != null ? rs.getInt("km_at_service") : null,
-                    rs.getString("service_type"),
+                    rs.getString("service_type") != null ? rs.getString("service_type") : "Scheduled Service",
                     rs.getString("description"),
-                    rs.getBigDecimal("cost"),
+                    rs.getBigDecimal("cost") != null ? rs.getBigDecimal("cost") : BigDecimal.ZERO,
                     rs.getString("performed_by"),
                     rs.getString("notes"),
-                    rs.getTimestamp("created_at").toInstant(),
-                    rs.getTimestamp("updated_at").toInstant()
+                    rs.getTimestamp("created_at") != null ? rs.getTimestamp("created_at").toInstant() : java.time.Instant.now(),
+                    rs.getTimestamp("updated_at") != null ? rs.getTimestamp("updated_at").toInstant() : java.time.Instant.now()
             );
-            rec.setPartsCost(rs.getBigDecimal("parts_cost"));
-            rec.setLaborCost(rs.getBigDecimal("labor_cost"));
-            rec.setVerified(rs.getBoolean("verified"));
-            rec.setIsUpcoming(rs.getBoolean("is_upcoming"));
+            rec.setPartsCost(rs.getBigDecimal("parts_cost") != null ? rs.getBigDecimal("parts_cost") : BigDecimal.ZERO);
+            rec.setLaborCost(rs.getBigDecimal("labor_cost") != null ? rs.getLaborCost() : BigDecimal.ZERO);
+            rec.setVerified(Boolean.TRUE.equals(rs.getBoolean("verified")));
+            rec.setIsUpcoming(Boolean.TRUE.equals(rs.getBoolean("is_upcoming")));
             rec.setLinkedTransactionId(rs.getString("linked_transaction_id"));
             rec.setSpecificationsJson(rs.getString("specifications_json"));
             return rec;
