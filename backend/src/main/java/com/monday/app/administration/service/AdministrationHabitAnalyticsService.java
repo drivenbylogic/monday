@@ -8,6 +8,8 @@ import com.monday.app.administration.repository.AdministrationHabitLogRepository
 import com.monday.app.administration.repository.AdministrationHabitOccurrenceRepository;
 import com.monday.app.administration.repository.AdministrationHabitRepository;
 import com.monday.app.security.SecurityUtils;
+import com.monday.app.shared.cache.CacheNames;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -163,6 +165,7 @@ public class AdministrationHabitAnalyticsService {
         );
     }
 
+    @Cacheable(value = CacheNames.HABIT_ANALYTICS, keyGenerator = "userAwareKeyGenerator", sync = true)
     @Transactional(readOnly = true)
     public HabitAnalyticsDto getHabitAnalytics(UUID habitId) {
         HabitDto habit = habitService.getById(habitId);
@@ -238,6 +241,7 @@ public class AdministrationHabitAnalyticsService {
         );
     }
 
+    @Cacheable(value = CacheNames.HABIT_REPORTS, keyGenerator = "userAwareKeyGenerator", sync = true)
     @Transactional
     public HabitWeeklyReportDto getWeeklyReport(LocalDate date) {
         if (date == null) date = LocalDate.now();
@@ -427,6 +431,7 @@ public class AdministrationHabitAnalyticsService {
         );
     }
 
+    @Cacheable(value = CacheNames.HABIT_REPORTS, keyGenerator = "userAwareKeyGenerator", sync = true)
     @Transactional
     public HabitMonthlyReportDto getMonthlyReport(int year, int month) {
         UUID userId = SecurityUtils.getCurrentUserId().orElse(null);

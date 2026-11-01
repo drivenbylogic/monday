@@ -3,7 +3,10 @@ package com.monday.app.project.service;
 import com.monday.app.project.entity.Milestone;
 import com.monday.app.project.repository.MilestoneRepository;
 import com.monday.app.project.repository.ProjectRepository;
+import com.monday.app.shared.cache.CacheInvalidationService;
+import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.shared.exception.ResourceNotFoundException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,11 +19,29 @@ public class MilestoneService {
 
     private final MilestoneRepository milestoneRepository;
     private final ProjectRepository projectRepository;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public MilestoneService(MilestoneRepository milestoneRepository,
                             ProjectRepository projectRepository) {
+        this(milestoneRepository, projectRepository, null);
+    }
+
+    @Autowired
+    public MilestoneService(MilestoneRepository milestoneRepository,
+                            ProjectRepository projectRepository,
+                            @org.springframework.lang.Nullable CacheInvalidationService cacheInvalidationService) {
         this.milestoneRepository = milestoneRepository;
         this.projectRepository = projectRepository;
+        this.cacheInvalidationService = cacheInvalidationService;
+    }
+
+    private void evictMetrics() {
+        if (cacheInvalidationService != null) {
+            cacheInvalidationService.evictAllAfterCommit(
+                    CacheNames.PROJECT_METRICS,
+                    CacheNames.HOME_DASHBOARD
+            );
+        }
     }
 
     @Transactional
@@ -35,7 +56,9 @@ public class MilestoneService {
         if (milestone.getPriority() == null) {
             milestone.setPriority("MEDIUM");
         }
-        return milestoneRepository.save(milestone);
+        Milestone saved = milestoneRepository.save(milestone);
+        evictMetrics();
+        return saved;
     }
 
     @Transactional
@@ -56,7 +79,9 @@ public class MilestoneService {
             existing.setCompletedAt(null);
         }
 
-        return milestoneRepository.update(existing);
+        Milestone saved = milestoneRepository.update(existing);
+        evictMetrics();
+        return saved;
     }
 
     public Milestone getById(UUID id) {
@@ -73,5 +98,6 @@ public class MilestoneService {
         milestoneRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Milestone", id));
         milestoneRepository.deleteById(id);
+        evictMetrics();
     }
 }

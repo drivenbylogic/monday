@@ -27,11 +27,13 @@ import com.monday.app.project.repository.ProjectRepository;
 import com.monday.app.project.repository.TaskRepository;
 import com.monday.app.reminder.entity.Reminder;
 import com.monday.app.reminder.repository.ReminderRepository;
+import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.vehicle.entity.*;
 import com.monday.app.vehicle.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -142,6 +144,7 @@ public class HomeDashboardService {
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
     }
 
+    @Cacheable(value = CacheNames.HOME_DASHBOARD, keyGenerator = "userAwareKeyGenerator", sync = true)
     public HomeDashboardResponse getDashboard(LocalDate date, ZoneId zoneId) {
         if (date == null) {
             date = LocalDate.now(zoneId != null ? zoneId : ZoneId.systemDefault());

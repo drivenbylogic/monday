@@ -4,7 +4,10 @@ import com.monday.app.administration.dto.*;
 import com.monday.app.administration.entity.*;
 import com.monday.app.administration.repository.*;
 import com.monday.app.security.SecurityUtils;
+import com.monday.app.shared.cache.CacheInvalidationService;
+import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.shared.exception.ResourceNotFoundException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +28,7 @@ public class AdministrationHabitExecutionService {
     private final AdministrationHabitLogRepository logRepository;
     private final AdministrationHabitPausePeriodRepository pausePeriodRepository;
     private final AdministrationHabitRecurrenceEngine recurrenceEngine;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public AdministrationHabitExecutionService(
             AdministrationHabitRepository habitRepository,
@@ -35,6 +39,21 @@ public class AdministrationHabitExecutionService {
             AdministrationHabitPausePeriodRepository pausePeriodRepository,
             AdministrationHabitRecurrenceEngine recurrenceEngine
     ) {
+        this(habitRepository, groupRepository, scheduleVersionRepository, occurrenceRepository,
+                logRepository, pausePeriodRepository, recurrenceEngine, null);
+    }
+
+    @Autowired
+    public AdministrationHabitExecutionService(
+            AdministrationHabitRepository habitRepository,
+            AdministrationHabitGroupRepository groupRepository,
+            AdministrationHabitScheduleVersionRepository scheduleVersionRepository,
+            AdministrationHabitOccurrenceRepository occurrenceRepository,
+            AdministrationHabitLogRepository logRepository,
+            AdministrationHabitPausePeriodRepository pausePeriodRepository,
+            AdministrationHabitRecurrenceEngine recurrenceEngine,
+            @org.springframework.lang.Nullable CacheInvalidationService cacheInvalidationService
+    ) {
         this.habitRepository = habitRepository;
         this.groupRepository = groupRepository;
         this.scheduleVersionRepository = scheduleVersionRepository;
@@ -42,6 +61,17 @@ public class AdministrationHabitExecutionService {
         this.logRepository = logRepository;
         this.pausePeriodRepository = pausePeriodRepository;
         this.recurrenceEngine = recurrenceEngine;
+        this.cacheInvalidationService = cacheInvalidationService;
+    }
+
+    private void evictHabitCaches() {
+        if (cacheInvalidationService != null) {
+            cacheInvalidationService.evictAllAfterCommit(
+                    CacheNames.HABIT_ANALYTICS,
+                    CacheNames.HABIT_REPORTS,
+                    CacheNames.HOME_DASHBOARD
+            );
+        }
     }
 
     @Transactional
@@ -240,6 +270,7 @@ public class AdministrationHabitExecutionService {
         AdministrationHabit habit = habitRepository.findById(updated.getHabitId()).orElse(null);
         Map<UUID, String> groupNames = loadGroupNames(habit != null ? habit.getUserId() : null);
 
+        evictHabitCaches();
         return toOccurrenceDto(updated, habit, groupNames);
     }
 
@@ -262,6 +293,7 @@ public class AdministrationHabitExecutionService {
         AdministrationHabit habit = habitRepository.findById(updated.getHabitId()).orElse(null);
         Map<UUID, String> groupNames = loadGroupNames(habit != null ? habit.getUserId() : null);
 
+        evictHabitCaches();
         return toOccurrenceDto(updated, habit, groupNames);
     }
 
@@ -279,6 +311,7 @@ public class AdministrationHabitExecutionService {
         AdministrationHabit habit = habitRepository.findById(updated.getHabitId()).orElse(null);
         Map<UUID, String> groupNames = loadGroupNames(habit != null ? habit.getUserId() : null);
 
+        evictHabitCaches();
         return toOccurrenceDto(updated, habit, groupNames);
     }
 
@@ -303,6 +336,7 @@ public class AdministrationHabitExecutionService {
         AdministrationHabit habit = habitRepository.findById(updated.getHabitId()).orElse(null);
         Map<UUID, String> groupNames = loadGroupNames(habit != null ? habit.getUserId() : null);
 
+        evictHabitCaches();
         return toOccurrenceDto(updated, habit, groupNames);
     }
 
@@ -327,6 +361,7 @@ public class AdministrationHabitExecutionService {
         log.setNotes(req.notes());
 
         AdministrationHabitLog saved = logRepository.save(log);
+        evictHabitCaches();
         return toLogDto(saved, habit.getName());
     }
 
@@ -341,6 +376,7 @@ public class AdministrationHabitExecutionService {
 
         AdministrationHabitLog updated = logRepository.update(log);
         AdministrationHabit habit = habitRepository.findById(updated.getHabitId()).orElse(null);
+        evictHabitCaches();
         return toLogDto(updated, habit != null ? habit.getName() : null);
     }
 
@@ -349,6 +385,7 @@ public class AdministrationHabitExecutionService {
         logRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Habit log not found with id: " + id));
         logRepository.deleteById(id);
+        evictHabitCaches();
     }
 
     public void ensureOccurrencesForDateRange(UUID userId, LocalDate from, LocalDate to) {

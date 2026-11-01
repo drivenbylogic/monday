@@ -33,6 +33,10 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import com.monday.app.project.dto.MilestoneRoadmapDto;
 import com.monday.app.project.dto.MilestoneTaskDto;
+import com.monday.app.shared.cache.CacheInvalidationService;
+import com.monday.app.shared.cache.CacheNames;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 
 @Service
 public class ProjectService {
@@ -42,17 +46,38 @@ public class ProjectService {
     private final TaskRepository taskRepository;
     private final NamedParameterJdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public ProjectService(ProjectRepository projectRepository,
                           MilestoneRepository milestoneRepository,
                           TaskRepository taskRepository,
                           NamedParameterJdbcTemplate jdbc,
                           ObjectMapper objectMapper) {
+        this(projectRepository, milestoneRepository, taskRepository, jdbc, objectMapper, null);
+    }
+
+    @Autowired
+    public ProjectService(ProjectRepository projectRepository,
+                          MilestoneRepository milestoneRepository,
+                          TaskRepository taskRepository,
+                          NamedParameterJdbcTemplate jdbc,
+                          ObjectMapper objectMapper,
+                          @org.springframework.lang.Nullable CacheInvalidationService cacheInvalidationService) {
         this.projectRepository = projectRepository;
         this.milestoneRepository = milestoneRepository;
         this.taskRepository = taskRepository;
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.cacheInvalidationService = cacheInvalidationService;
+    }
+
+    private void evictMetrics() {
+        if (cacheInvalidationService != null) {
+            cacheInvalidationService.evictAllAfterCommit(
+                    CacheNames.PROJECT_METRICS,
+                    CacheNames.HOME_DASHBOARD
+            );
+        }
     }
 
     @Transactional
@@ -72,7 +97,9 @@ public class ProjectService {
         if (project.getTags() == null || project.getTags().isBlank()) {
             project.setTags("[]");
         }
-        return projectRepository.save(project);
+        Project saved = projectRepository.save(project);
+        evictMetrics();
+        return saved;
     }
 
     @Transactional
@@ -114,7 +141,9 @@ public class ProjectService {
             existing.setCompletedAt(null);
         }
 
-        return projectRepository.update(existing);
+        Project saved = projectRepository.update(existing);
+        evictMetrics();
+        return saved;
     }
 
     public Project getById(UUID id) {
@@ -139,6 +168,7 @@ public class ProjectService {
         projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", id));
         projectRepository.deleteById(id);
+        evictMetrics();
     }
 
     public List<ProjectBasicResponse> getBasicProjects() {
@@ -277,6 +307,7 @@ public class ProjectService {
         }).collect(Collectors.toList());
     }
 
+    @Cacheable(value = CacheNames.PROJECT_METRICS, keyGenerator = "userAwareKeyGenerator", sync = true)
     public ProjectMetricsResponse getProjectMetrics() {
         ProjectMetricsResponse resp = new ProjectMetricsResponse();
         resp.setActiveProjectCount(projectRepository.countActiveProjects());
@@ -300,6 +331,7 @@ public class ProjectService {
         return resp;
     }
 
+    @Cacheable(value = CacheNames.PROJECT_METRICS, keyGenerator = "userAwareKeyGenerator", sync = true)
     public VelocityMetricsResponse getVelocityMetrics() {
         Instant now = Instant.now();
         Instant oneWeekAgo = now.minus(7, ChronoUnit.DAYS);

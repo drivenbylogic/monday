@@ -1,5 +1,7 @@
 package com.monday.app.vehicle.service;
 
+import com.monday.app.shared.cache.CacheInvalidationService;
+import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.shared.exception.ResourceNotFoundException;
 import com.monday.app.vehicle.entity.Vehicle;
 import com.monday.app.vehicle.entity.VehicleMaintenanceSchedule;
@@ -9,6 +11,7 @@ import com.monday.app.vehicle.repository.VehicleMaintenanceScheduleRepository;
 import com.monday.app.vehicle.repository.VehicleObligationRepository;
 import com.monday.app.vehicle.repository.VehicleRepository;
 import com.monday.app.vehicle.repository.VehicleServiceRecordRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,17 +26,39 @@ public class VehicleService {
     private final VehicleMaintenanceScheduleRepository scheduleRepository;
     private final VehicleObligationRepository obligationRepository;
     private final org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public VehicleService(VehicleRepository vehicleRepository,
                           VehicleServiceRecordRepository serviceRecordRepository,
                           VehicleMaintenanceScheduleRepository scheduleRepository,
                           VehicleObligationRepository obligationRepository,
                           org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc) {
+        this(vehicleRepository, serviceRecordRepository, scheduleRepository, obligationRepository, jdbc, null);
+    }
+
+    @Autowired
+    public VehicleService(VehicleRepository vehicleRepository,
+                          VehicleServiceRecordRepository serviceRecordRepository,
+                          VehicleMaintenanceScheduleRepository scheduleRepository,
+                          VehicleObligationRepository obligationRepository,
+                          org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc,
+                          @org.springframework.lang.Nullable CacheInvalidationService cacheInvalidationService) {
         this.vehicleRepository = vehicleRepository;
         this.serviceRecordRepository = serviceRecordRepository;
         this.scheduleRepository = scheduleRepository;
         this.obligationRepository = obligationRepository;
         this.jdbc = jdbc;
+        this.cacheInvalidationService = cacheInvalidationService;
+    }
+
+    private void evictVehicleCaches() {
+        if (cacheInvalidationService != null) {
+            cacheInvalidationService.evictAllAfterCommit(
+                    CacheNames.VEHICLE_OVERVIEW,
+                    CacheNames.VEHICLE_ANALYTICS,
+                    CacheNames.HOME_DASHBOARD
+            );
+        }
     }
 
     // --- Vehicles ---
@@ -42,7 +67,9 @@ public class VehicleService {
         if (vehicle.getStatus() == null) {
             vehicle.setStatus("ACTIVE");
         }
-        return vehicleRepository.save(vehicle);
+        Vehicle saved = vehicleRepository.save(vehicle);
+        evictVehicleCaches();
+        return saved;
     }
 
     @Transactional
@@ -55,7 +82,9 @@ public class VehicleService {
         existing.setPurchaseAmount(updated.getPurchaseAmount());
         existing.setCurrentKm(updated.getCurrentKm());
         existing.setStatus(updated.getStatus());
-        return vehicleRepository.update(existing);
+        Vehicle saved = vehicleRepository.update(existing);
+        evictVehicleCaches();
+        return saved;
     }
 
     public Vehicle getVehicle(UUID id) {
@@ -70,13 +99,16 @@ public class VehicleService {
     public void deleteVehicle(UUID id) {
         getVehicle(id); // Check existence
         vehicleRepository.deleteById(id);
+        evictVehicleCaches();
     }
 
     // --- Service Records ---
     @Transactional
     public VehicleServiceRecord createServiceRecord(VehicleServiceRecord record) {
         getVehicle(record.getVehicleId());
-        return serviceRecordRepository.save(record);
+        VehicleServiceRecord saved = serviceRecordRepository.save(record);
+        evictVehicleCaches();
+        return saved;
     }
 
     @Transactional
@@ -90,7 +122,9 @@ public class VehicleService {
         existing.setCost(updated.getCost());
         existing.setPerformedBy(updated.getPerformedBy());
         existing.setNotes(updated.getNotes());
-        return serviceRecordRepository.update(existing);
+        VehicleServiceRecord saved = serviceRecordRepository.update(existing);
+        evictVehicleCaches();
+        return saved;
     }
 
     public List<VehicleServiceRecord> getServiceRecords(UUID vehicleId) {
@@ -101,6 +135,7 @@ public class VehicleService {
     public void deleteServiceRecord(UUID id) {
         serviceRecordRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("VehicleServiceRecord", id));
         serviceRecordRepository.deleteById(id);
+        evictVehicleCaches();
     }
 
     // --- Maintenance Schedules ---

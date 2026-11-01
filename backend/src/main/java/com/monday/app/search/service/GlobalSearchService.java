@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.monday.app.search.dto.ModuleSearchResponse;
 import com.monday.app.search.dto.SearchResultDto;
+import com.monday.app.shared.cache.CacheNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -31,6 +33,7 @@ public class GlobalSearchService {
     /**
      * Search an individual module by its ID
      */
+    @Cacheable(value = CacheNames.GLOBAL_SEARCH, keyGenerator = "userAwareKeyGenerator")
     public ModuleSearchResponse searchModule(String moduleId, String query) {
         String cleanQuery = (query != null) ? query.trim() : "";
         if (cleanQuery.isEmpty()) {
@@ -65,6 +68,7 @@ public class GlobalSearchService {
     /**
      * Search across all 7 modules
      */
+    @Cacheable(value = CacheNames.GLOBAL_SEARCH, keyGenerator = "userAwareKeyGenerator")
     public Map<String, ModuleSearchResponse> searchAll(String query) {
         String[] modules = {"projects", "events", "finance", "vehicles", "administration", "career", "intelligence"};
         Map<String, ModuleSearchResponse> map = new LinkedHashMap<>();

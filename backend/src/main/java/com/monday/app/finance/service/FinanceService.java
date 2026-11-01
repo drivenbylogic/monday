@@ -7,7 +7,11 @@ import com.monday.app.finance.dto.EmiConversionResult;
 import com.monday.app.finance.dto.SafeToSpend;
 import com.monday.app.finance.entity.*;
 import com.monday.app.finance.repository.*;
+import com.monday.app.shared.cache.CacheInvalidationService;
+import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.shared.exception.ResourceNotFoundException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +37,7 @@ public class FinanceService {
     private final InvestmentRepository investmentRepository;
     private final EventRepository eventRepository;
     private final org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public FinanceService(TransactionRepository transactionRepository,
                           BudgetRepository budgetRepository,
@@ -42,6 +47,20 @@ public class FinanceService {
                           InvestmentRepository investmentRepository,
                           EventRepository eventRepository,
                           org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc) {
+        this(transactionRepository, budgetRepository, categoryRepository, accountRepository,
+                creditAccountRepository, investmentRepository, eventRepository, jdbc, null);
+    }
+
+    @Autowired
+    public FinanceService(TransactionRepository transactionRepository,
+                          BudgetRepository budgetRepository,
+                          BudgetCategoryRepository categoryRepository,
+                          FinanceAccountRepository accountRepository,
+                          CreditAccountRepository creditAccountRepository,
+                          InvestmentRepository investmentRepository,
+                          EventRepository eventRepository,
+                          org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc,
+                          @org.springframework.lang.Nullable CacheInvalidationService cacheInvalidationService) {
         this.transactionRepository = transactionRepository;
         this.budgetRepository = budgetRepository;
         this.categoryRepository = categoryRepository;
@@ -50,6 +69,28 @@ public class FinanceService {
         this.investmentRepository = investmentRepository;
         this.eventRepository = eventRepository;
         this.jdbc = jdbc;
+        this.cacheInvalidationService = cacheInvalidationService;
+    }
+
+    private void evictFinancialCalculations() {
+        if (cacheInvalidationService != null) {
+            cacheInvalidationService.evictAllAfterCommit(
+                    CacheNames.FINANCE_PULSE,
+                    CacheNames.FINANCE_SAFE_TO_SPEND,
+                    CacheNames.FINANCE_BURN,
+                    CacheNames.FINANCE_MONTHLY_REPORT,
+                    CacheNames.HOME_DASHBOARD
+            );
+        }
+    }
+
+    private void evictFinancialReferences() {
+        if (cacheInvalidationService != null) {
+            cacheInvalidationService.evictAllAfterCommit(
+                    CacheNames.FINANCE_REFERENCE,
+                    CacheNames.HOME_DASHBOARD
+            );
+        }
     }
 
     // ─── Budget Categories ──────────────────────────────────────────
@@ -57,7 +98,9 @@ public class FinanceService {
     @Transactional
     public BudgetCategory createCategory(BudgetCategory category) {
         if (category.getStatus() == null) category.setStatus("ACTIVE");
-        return categoryRepository.save(category);
+        BudgetCategory saved = categoryRepository.save(category);
+        evictFinancialReferences();
+        return saved;
     }
 
     @Transactional
@@ -73,7 +116,9 @@ public class FinanceService {
         if (updated.getStatus() != null && !updated.getStatus().isBlank()) {
             existing.setStatus(updated.getStatus());
         }
-        return categoryRepository.update(existing);
+        BudgetCategory saved = categoryRepository.update(existing);
+        evictFinancialReferences();
+        return saved;
     }
 
     public BudgetCategory getCategoryById(UUID id) {
@@ -122,6 +167,8 @@ public class FinanceService {
         // Nullify transaction category references
         jdbc.update("UPDATE transactions SET category_id = NULL WHERE category_id = :id", new MapSqlParameterSource("id", id));
         categoryRepository.deleteById(id);
+        evictFinancialReferences();
+        evictFinancialCalculations();
     }
 
     @Transactional
@@ -164,7 +211,9 @@ public class FinanceService {
         if (budget.getAmount() == null) {
             budget.setAmount(BigDecimal.ZERO);
         }
-        return budgetRepository.save(budget);
+        Budget saved = budgetRepository.save(budget);
+        evictFinancialCalculations();
+        return saved;
     }
 
     @Transactional
@@ -194,7 +243,9 @@ public class FinanceService {
         if (updated.getAmount() != null) {
             existing.setAmount(updated.getAmount());
         }
-        return budgetRepository.update(existing);
+        Budget saved = budgetRepository.update(existing);
+        evictFinancialCalculations();
+        return saved;
     }
 
     public Budget getBudgetById(UUID id) {
@@ -239,6 +290,7 @@ public class FinanceService {
         budgetRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Budget", id));
         budgetRepository.deleteById(id);
+        evictFinancialCalculations();
     }
 
     @Transactional
@@ -302,7 +354,9 @@ public class FinanceService {
         // Automatic credit card commitment & event handling
         processCreditCardTransactionOnCreate(txn);
 
-        return transactionRepository.save(txn);
+        Transaction saved = transactionRepository.save(txn);
+        evictFinancialCalculations();
+        return saved;
     }
 
     @Transactional
@@ -462,6 +516,8 @@ public class FinanceService {
                     .addValue("cardId", card.getId()));
         }
 
+        evictFinancialCalculations();
+
         return new EmiConversionResult(
                 emiGroupId,
                 original.getId(),
@@ -531,7 +587,9 @@ public class FinanceService {
         // Apply new credit card transaction impact
         processCreditCardTransactionOnCreate(existing);
 
-        return transactionRepository.update(existing);
+        Transaction saved = transactionRepository.update(existing);
+        evictFinancialCalculations();
+        return saved;
     }
 
     public Transaction getTransactionById(UUID id) {
@@ -564,6 +622,7 @@ public class FinanceService {
         processCreditCardTransactionOnDelete(existing);
 
         transactionRepository.deleteById(id);
+        evictFinancialCalculations();
     }
 
     // ─── Credit Card Impending Commitment & Calendar Automation ──────────
@@ -973,6 +1032,7 @@ public class FinanceService {
      * Calculates safe-to-spend for all active budgets covering today's date,
      * taking into account transactions already performed today.
      */
+    @Cacheable(value = CacheNames.FINANCE_SAFE_TO_SPEND, keyGenerator = "userAwareKeyGenerator", sync = true)
     public List<SafeToSpend> calculateSafeToSpend() {
         LocalDate today = LocalDate.now();
         List<Budget> activeBudgets = budgetRepository.findActiveForDate(today);
@@ -1048,6 +1108,7 @@ public class FinanceService {
     }
 
     // --- Analytical Endpoints ---
+    @Cacheable(value = CacheNames.FINANCE_PULSE, keyGenerator = "userAwareKeyGenerator", sync = true)
     public Map<String, Object> getPulse(String cycle) {
         // Sanitize cycle: normalize null, blank, or "monthly" to current YearMonth YYYY-MM
         if (cycle == null || cycle.isBlank() || cycle.equalsIgnoreCase("monthly") || !cycle.matches("^\\d{4}-\\d{2}$")) {
@@ -1193,6 +1254,7 @@ public class FinanceService {
         return pulseMap;
     }
 
+    @Cacheable(value = CacheNames.FINANCE_MONTHLY_REPORT, keyGenerator = "userAwareKeyGenerator", sync = true)
     public Map<String, Object> getMonthlyReport(String cycle) {
         if (cycle == null || cycle.isBlank() || cycle.equalsIgnoreCase("monthly") || !cycle.matches("^\\d{4}-\\d{2}$")) {
             cycle = YearMonth.now().toString();
@@ -1384,6 +1446,7 @@ public class FinanceService {
         return report;
     }
 
+    @Cacheable(value = CacheNames.FINANCE_BURN, keyGenerator = "userAwareKeyGenerator", sync = true)
     public List<Map<String, Object>> getBurnTrajectory(int days, String cycle) {
         if (cycle == null || cycle.isBlank() || cycle.equalsIgnoreCase("monthly") || !cycle.matches("^\\d{4}-\\d{2}$")) {
             cycle = YearMonth.now().toString();

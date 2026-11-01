@@ -8,14 +8,21 @@ import com.monday.app.intelligence.entity.Article;
 import com.monday.app.intelligence.entity.ArticleSummary;
 import com.monday.app.intelligence.repository.ArticleRepository;
 import com.monday.app.intelligence.repository.ArticleSummaryRepository;
+import com.monday.app.shared.cache.CacheNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
@@ -30,6 +37,7 @@ public class IntelligenceSummaryService {
     private final AiGateway aiGateway;
     private final ArticleSummaryRepository summaryRepository;
     private final ArticleRepository articleRepository;
+    private final CacheManager cacheManager;
 
     @Value("${ai.default-model:gpt-4o-mini}")
     private String defaultModel = "gpt-4o-mini";
@@ -49,9 +57,35 @@ public class IntelligenceSummaryService {
     public IntelligenceSummaryService(AiGateway aiGateway,
                                       ArticleSummaryRepository summaryRepository,
                                       ArticleRepository articleRepository) {
+        this(aiGateway, summaryRepository, articleRepository, null);
+    }
+
+    @Autowired
+    public IntelligenceSummaryService(AiGateway aiGateway,
+                                      ArticleSummaryRepository summaryRepository,
+                                      ArticleRepository articleRepository,
+                                      @org.springframework.lang.Nullable CacheManager cacheManager) {
         this.aiGateway = aiGateway;
         this.summaryRepository = summaryRepository;
         this.articleRepository = articleRepository;
+        this.cacheManager = cacheManager;
+    }
+
+    private String computeContentHash(String content, String model, String version) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            String combined = (version != null ? version : "") + ":" + (model != null ? model : "") + ":" + (content != null ? content.trim() : "");
+            byte[] hash = digest.digest(combined.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) hexString.append('0');
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (NoSuchAlgorithmException e) {
+            return String.valueOf((content + model).hashCode());
+        }
     }
 
     public record SummarizationResult(
@@ -109,6 +143,31 @@ public class IntelligenceSummaryService {
         String boundedContent = article.getContentText() != null ? article.getContentText() : "";
         if (boundedContent.length() > maxInputChars) {
             boundedContent = boundedContent.substring(0, maxInputChars);
+        }
+
+        // Check SHA-256 deduplication cache
+        String contentHash = computeContentHash(boundedContent, defaultModel, PROMPT_VERSION);
+        Cache aiCache = cacheManager != null ? cacheManager.getCache(CacheNames.AI_SYNTHESIS) : null;
+        if (aiCache != null) {
+            String cachedSummary = aiCache.get(contentHash, String.class);
+            if (cachedSummary != null && !cachedSummary.isBlank()) {
+                log.info("Deduplicated identical content using SHA-256 hash for article '{}' ({})", article.getTitle(), article.getId());
+                ArticleSummary summary = new ArticleSummary();
+                summary.setArticle(article);
+                summary.setSummary(cachedSummary);
+                summary.setModel(defaultModel);
+                summary.setPromptVersion(PROMPT_VERSION);
+                summary.setWordCount(cachedSummary.split("\\s+").length);
+                summary.setTokensUsed(0);
+                summary.setEstimatedCost(BigDecimal.ZERO);
+                summary.setGeneratedAt(OffsetDateTime.now());
+                summary.setStatus("SUCCESS");
+                ArticleSummary savedSummary = summaryRepository.save(summary);
+
+                article.setProcessingStatus("SUMMARIZED");
+                articleRepository.save(article);
+                return new SummarizationResult(savedSummary, true, false, 0, BigDecimal.ZERO);
+            }
         }
 
         String prompt = buildPrompt(article.getTitle(), boundedContent);
@@ -187,6 +246,9 @@ public class IntelligenceSummaryService {
         summary.setGeneratedAt(OffsetDateTime.now());
         summary.setStatus("SUCCESS");
         ArticleSummary savedSummary = summaryRepository.save(summary);
+        if (aiCache != null) {
+            aiCache.put(contentHash, summaryText);
+        }
 
         article.setProcessingStatus("SUMMARIZED");
         articleRepository.save(article);

@@ -4,8 +4,11 @@ import com.monday.app.project.entity.Task;
 import com.monday.app.project.repository.MilestoneRepository;
 import com.monday.app.project.repository.ProjectRepository;
 import com.monday.app.project.repository.TaskRepository;
+import com.monday.app.shared.cache.CacheInvalidationService;
+import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.shared.exception.BusinessRuleException;
 import com.monday.app.shared.exception.ResourceNotFoundException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,13 +22,32 @@ public class TaskService {
     private final TaskRepository taskRepository;
     private final ProjectRepository projectRepository;
     private final MilestoneRepository milestoneRepository;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public TaskService(TaskRepository taskRepository,
                        ProjectRepository projectRepository,
                        MilestoneRepository milestoneRepository) {
+        this(taskRepository, projectRepository, milestoneRepository, null);
+    }
+
+    @Autowired
+    public TaskService(TaskRepository taskRepository,
+                       ProjectRepository projectRepository,
+                       MilestoneRepository milestoneRepository,
+                       @org.springframework.lang.Nullable CacheInvalidationService cacheInvalidationService) {
         this.taskRepository = taskRepository;
         this.projectRepository = projectRepository;
         this.milestoneRepository = milestoneRepository;
+        this.cacheInvalidationService = cacheInvalidationService;
+    }
+
+    private void evictMetrics() {
+        if (cacheInvalidationService != null) {
+            cacheInvalidationService.evictAllAfterCommit(
+                    CacheNames.PROJECT_METRICS,
+                    CacheNames.HOME_DASHBOARD
+            );
+        }
     }
 
     @Transactional
@@ -38,7 +60,9 @@ public class TaskService {
         if (task.getPriority() == null) {
             task.setPriority("MEDIUM");
         }
-        return taskRepository.save(task);
+        Task saved = taskRepository.save(task);
+        evictMetrics();
+        return saved;
     }
 
     @Transactional
@@ -68,7 +92,9 @@ public class TaskService {
             existing.setCompletedAt(null);
         }
 
-        return taskRepository.update(existing);
+        Task saved = taskRepository.update(existing);
+        evictMetrics();
+        return saved;
     }
 
     public Task getById(UUID id) {
@@ -129,7 +155,9 @@ public class TaskService {
         occurrence.setEstimatedMinutes(template.getEstimatedMinutes());
         occurrence.setRecurring(false);
 
-        return taskRepository.save(occurrence);
+        Task saved = taskRepository.save(occurrence);
+        evictMetrics();
+        return saved;
     }
 
     public List<Task> getOccurrences(UUID templateTaskId) {
@@ -141,6 +169,7 @@ public class TaskService {
         taskRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Task", id));
         taskRepository.deleteById(id);
+        evictMetrics();
     }
 
     private void validateReferences(Task task) {

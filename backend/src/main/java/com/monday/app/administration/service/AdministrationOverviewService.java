@@ -2,6 +2,8 @@ package com.monday.app.administration.service;
 
 import com.monday.app.administration.dto.*;
 import com.monday.app.administration.repository.*;
+import com.monday.app.shared.cache.CacheNames;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +54,7 @@ public class AdministrationOverviewService {
         this.noteService = noteService;
     }
 
+    @Cacheable(value = CacheNames.ADMIN_OVERVIEW, keyGenerator = "userAwareKeyGenerator", sync = true)
     @Transactional(readOnly = true)
     public AdministrationOverviewDto getOverview() {
         LocalDate today = LocalDate.now();

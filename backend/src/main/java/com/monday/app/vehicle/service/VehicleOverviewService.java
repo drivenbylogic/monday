@@ -1,9 +1,11 @@
 package com.monday.app.vehicle.service;
 
+import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.shared.exception.ResourceNotFoundException;
 import com.monday.app.vehicle.dto.*;
 import com.monday.app.vehicle.entity.*;
 import com.monday.app.vehicle.repository.*;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -48,6 +50,7 @@ public class VehicleOverviewService {
         this.timelineService = timelineService;
     }
 
+    @Cacheable(value = CacheNames.VEHICLE_OVERVIEW, keyGenerator = "userAwareKeyGenerator", sync = true)
     public VehicleOverviewDto getOverview(UUID vehicleId) {
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle", vehicleId));

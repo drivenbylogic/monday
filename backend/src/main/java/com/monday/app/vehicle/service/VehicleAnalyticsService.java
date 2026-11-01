@@ -1,9 +1,11 @@
 package com.monday.app.vehicle.service;
 
+import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.shared.exception.ResourceNotFoundException;
 import com.monday.app.vehicle.dto.*;
 import com.monday.app.vehicle.entity.*;
 import com.monday.app.vehicle.repository.*;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -39,6 +41,7 @@ public class VehicleAnalyticsService {
         this.scheduleRepository = scheduleRepository;
     }
 
+    @Cacheable(value = CacheNames.VEHICLE_ANALYTICS, keyGenerator = "userAwareKeyGenerator", sync = true)
     public VehicleAnalyticsDto getAnalytics(UUID vehicleId, String period) {
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle", vehicleId));

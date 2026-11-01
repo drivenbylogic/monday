@@ -10,9 +10,13 @@ import com.monday.app.ai.model.AiRequest;
 import com.monday.app.ai.model.AiResponse;
 import com.monday.app.brief.entity.DailyBrief;
 import com.monday.app.brief.repository.DailyBriefRepository;
+import com.monday.app.shared.cache.CacheInvalidationService;
+import com.monday.app.shared.cache.CacheNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +39,7 @@ public class AgendaGenerationService {
     private final DailyBriefRepository dailyBriefRepository;
     private final AiGateway aiGateway;
     private final ObjectMapper objectMapper;
+    private final CacheInvalidationService cacheInvalidationService;
 
     @Value("${ai.default-model:gpt-4o-mini}")
     private String defaultModel;
@@ -52,11 +57,22 @@ public class AgendaGenerationService {
                                    DeterministicAgendaGenerator deterministicGenerator,
                                    DailyBriefRepository dailyBriefRepository,
                                    AiGateway aiGateway) {
+        this(contextService, validationService, deterministicGenerator, dailyBriefRepository, aiGateway, null);
+    }
+
+    @Autowired
+    public AgendaGenerationService(AgendaContextService contextService,
+                                   AgendaValidationService validationService,
+                                   DeterministicAgendaGenerator deterministicGenerator,
+                                   DailyBriefRepository dailyBriefRepository,
+                                   AiGateway aiGateway,
+                                   @org.springframework.lang.Nullable CacheInvalidationService cacheInvalidationService) {
         this.contextService = contextService;
         this.validationService = validationService;
         this.deterministicGenerator = deterministicGenerator;
         this.dailyBriefRepository = dailyBriefRepository;
         this.aiGateway = aiGateway;
+        this.cacheInvalidationService = cacheInvalidationService;
         this.objectMapper = new ObjectMapper()
                 .registerModule(new JavaTimeModule())
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -70,6 +86,7 @@ public class AgendaGenerationService {
         this.minRefreshIntervalHours = minRefreshIntervalHours;
     }
 
+    @Cacheable(value = CacheNames.TODAY_AGENDA, keyGenerator = "userAwareKeyGenerator", sync = true)
     public TodayAgendaResponse getAgenda(LocalDate date, ZoneId zoneId) {
         if (date == null) {
             date = LocalDate.now(zoneId != null ? zoneId : ZoneId.systemDefault());
@@ -169,6 +186,10 @@ public class AgendaGenerationService {
 
                 // 4. Persist to daily_briefs
                 persistAgenda(finalAgenda);
+
+                if (cacheInvalidationService != null) {
+                    cacheInvalidationService.evictAllAfterCommit(CacheNames.TODAY_AGENDA);
+                }
 
                 return finalAgenda;
 
@@ -409,6 +430,11 @@ public class AgendaGenerationService {
         );
 
         persistAgenda(updatedAgenda);
+
+        if (cacheInvalidationService != null) {
+            cacheInvalidationService.evictAllAfterCommit(CacheNames.TODAY_AGENDA);
+        }
+
         return updatedAgenda;
     }
 
