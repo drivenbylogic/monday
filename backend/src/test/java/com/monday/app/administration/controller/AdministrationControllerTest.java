@@ -22,6 +22,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -158,5 +159,67 @@ class AdministrationControllerTest {
         mockMvc.perform(get("/api/v1/administration/notes"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].title").value("Paint Codes"));
+    }
+
+    @Test
+    void testCreatePersonWithRelationshipAttribute() throws Exception {
+        UUID personId = UUID.randomUUID();
+        when(personService.create(any(CreatePersonRequest.class))).thenAnswer(inv -> {
+            CreatePersonRequest req = inv.getArgument(0);
+            return new PersonDto(
+                    personId, req.displayName(), req.relationshipLabel(),
+                    req.birthday(), req.contactInformation(), req.notes(),
+                    0, null, Instant.now(), Instant.now()
+            );
+        });
+
+        String jsonPayload = """
+                {
+                    "displayName": "Alex Turner",
+                    "relationship": "Close Friend",
+                    "birthday": "1990-01-15",
+                    "contactInfo": "alex@example.com",
+                    "generalNotes": "Met in college"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/administration/people")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.displayName").value("Alex Turner"))
+                .andExpect(jsonPath("$.relationshipLabel").value("Close Friend"))
+                .andExpect(jsonPath("$.relationship").value("Close Friend"))
+                .andExpect(jsonPath("$.contactInformation").value("alex@example.com"))
+                .andExpect(jsonPath("$.contactInfo").value("alex@example.com"))
+                .andExpect(jsonPath("$.notes").value("Met in college"))
+                .andExpect(jsonPath("$.generalNotes").value("Met in college"));
+    }
+
+    @Test
+    void testUpdatePersonWithRelationshipAttribute() throws Exception {
+        UUID personId = UUID.randomUUID();
+        when(personService.update(any(UUID.class), any(UpdatePersonRequest.class))).thenAnswer(inv -> {
+            UpdatePersonRequest req = inv.getArgument(1);
+            return new PersonDto(
+                    personId, req.displayName() != null ? req.displayName() : "Alex Turner",
+                    req.relationshipLabel(),
+                    req.birthday(), req.contactInformation(), req.notes(),
+                    0, null, Instant.now(), Instant.now()
+            );
+        });
+
+        String jsonPayload = """
+                {
+                    "relationship": "Business Partner"
+                }
+                """;
+
+        mockMvc.perform(put("/api/v1/administration/people/" + personId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.relationshipLabel").value("Business Partner"))
+                .andExpect(jsonPath("$.relationship").value("Business Partner"));
     }
 }

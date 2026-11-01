@@ -44,7 +44,7 @@ public class AdministrationPersonService {
     public PersonDto create(CreatePersonRequest req) {
         AdministrationPerson p = new AdministrationPerson();
         p.setDisplayName(req.displayName().trim());
-        p.setRelationshipLabel(req.relationshipLabel());
+        p.setRelationshipLabel(req.relationshipLabel() != null ? req.relationshipLabel().trim() : null);
         p.setBirthday(req.birthday());
         p.setContactInformation(req.contactInformation());
         p.setNotes(req.notes());
@@ -73,7 +73,7 @@ public class AdministrationPersonService {
                 .orElseThrow(() -> new ResourceNotFoundException("Administration person not found: " + id));
 
         if (req.displayName() != null && !req.displayName().isBlank()) p.setDisplayName(req.displayName().trim());
-        if (req.relationshipLabel() != null) p.setRelationshipLabel(req.relationshipLabel());
+        if (req.relationshipLabel() != null) p.setRelationshipLabel(req.relationshipLabel().trim());
         if (req.birthday() != null) p.setBirthday(req.birthday());
         if (req.contactInformation() != null) p.setContactInformation(req.contactInformation());
         if (req.notes() != null) p.setNotes(req.notes());

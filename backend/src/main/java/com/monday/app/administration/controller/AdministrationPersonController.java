@@ -30,8 +30,15 @@ public class AdministrationPersonController {
     @GetMapping
     public ResponseEntity<List<PersonDto>> getPeople(
             @RequestParam(required = false) String query,
-            @RequestParam(required = false) Boolean archived) {
-        return ResponseEntity.ok(personService.getPeople(query, archived));
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Boolean archived,
+            @RequestParam(required = false) Boolean includeArchived) {
+        String searchQuery = (query != null && !query.isBlank()) ? query : search;
+        Boolean isArchived = archived;
+        if (isArchived == null && includeArchived != null && !includeArchived) {
+            isArchived = false;
+        }
+        return ResponseEntity.ok(personService.getPeople(searchQuery, isArchived));
     }
 
     @GetMapping("/{id}")
