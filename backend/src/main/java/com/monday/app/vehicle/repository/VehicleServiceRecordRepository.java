@@ -111,7 +111,7 @@ public class VehicleServiceRecordRepository {
                     rs.getTimestamp("updated_at") != null ? rs.getTimestamp("updated_at").toInstant() : java.time.Instant.now()
             );
             rec.setPartsCost(rs.getBigDecimal("parts_cost") != null ? rs.getBigDecimal("parts_cost") : BigDecimal.ZERO);
-            rec.setLaborCost(rs.getBigDecimal("labor_cost") != null ? rs.getLaborCost() : BigDecimal.ZERO);
+            rec.setLaborCost(rs.getBigDecimal("labor_cost") != null ? rs.getBigDecimal("labor_cost") : BigDecimal.ZERO);
             rec.setVerified(Boolean.TRUE.equals(rs.getBoolean("verified")));
             rec.setIsUpcoming(Boolean.TRUE.equals(rs.getBoolean("is_upcoming")));
             rec.setLinkedTransactionId(rs.getString("linked_transaction_id"));
