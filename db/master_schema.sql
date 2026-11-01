@@ -1140,3 +1140,117 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO app_settings (key, value, description) VALUES
 ('monthly_expense_allowance', '75000', 'Monthly expense budget cap in INR')
 ON CONFLICT (key) DO NOTHING;
+
+
+-- -----------------------------------------------------------------------------
+-- 11. HABIT TRACKER MODULE
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS habit_groups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER trg_habit_groups_updated_at
+BEFORE UPDATE ON habit_groups
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TABLE IF NOT EXISTS habits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    group_id UUID REFERENCES habit_groups(id) ON DELETE SET NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    category VARCHAR(100) NOT NULL,
+    frequency_type VARCHAR(50) NOT NULL DEFAULT 'DAILY',
+    target_value NUMERIC(10, 2),
+    minimum_target_value NUMERIC(10, 2),
+    target_unit VARCHAR(50),
+    priority VARCHAR(50) NOT NULL DEFAULT 'MEDIUM',
+    start_date DATE NOT NULL,
+    end_date DATE,
+    status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+    display_order INTEGER NOT NULL DEFAULT 0,
+    estimated_duration INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER trg_habits_updated_at
+BEFORE UPDATE ON habits
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TABLE IF NOT EXISTS habit_schedule_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    habit_id UUID NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+    schedule_config JSONB NOT NULL,
+    target_value NUMERIC(10, 2),
+    minimum_target_value NUMERIC(10, 2),
+    target_unit VARCHAR(50),
+    effective_from DATE NOT NULL,
+    effective_until DATE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS habit_occurrences (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    habit_id UUID NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+    schedule_version_id UUID REFERENCES habit_schedule_versions(id) ON DELETE SET NULL,
+    scheduled_date DATE NOT NULL,
+    target_value_snapshot NUMERIC(10, 2),
+    minimum_target_snapshot NUMERIC(10, 2),
+    target_unit_snapshot VARCHAR(50),
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    actual_value NUMERIC(10, 2),
+    completed_at TIMESTAMPTZ,
+    notes TEXT,
+    skip_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_habit_occurrences_habit_date UNIQUE (habit_id, scheduled_date)
+);
+
+CREATE TRIGGER trg_habit_occurrences_updated_at
+BEFORE UPDATE ON habit_occurrences
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TABLE IF NOT EXISTS habit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    habit_id UUID NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+    entry_date DATE NOT NULL,
+    actual_value NUMERIC(10, 2),
+    status VARCHAR(50) NOT NULL DEFAULT 'COMPLETED',
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER trg_habit_logs_updated_at
+BEFORE UPDATE ON habit_logs
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TABLE IF NOT EXISTS habit_pause_periods (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    habit_id UUID NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS habit_reminders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    habit_id UUID NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+    reminder_time TIME NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER trg_habit_reminders_updated_at
+BEFORE UPDATE ON habit_reminders
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
