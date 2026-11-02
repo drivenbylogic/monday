@@ -35,7 +35,7 @@ USER monday:monday
 
 # Runtime configuration
 ENV PORT=8080 \
-    JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -Djava.security.egd=file:/dev/./urandom"
+    JAVA_OPTS="-XX:+UseContainerSupport -XX:+UseSerialGC -XX:MaxRAMPercentage=60.0 -XX:InitialRAMPercentage=25.0 -Xss512k -XX:MaxMetaspaceSize=160m -Djava.security.egd=file:/dev/./urandom -Dfile.encoding=UTF-8"
 
 EXPOSE 8080
 

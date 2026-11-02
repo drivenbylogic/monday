@@ -150,7 +150,7 @@ class IntelligenceControllerTest {
                 "SUMMARIZED"
         );
 
-        when(articleFeedService.getArticles(any(), any(), any(), any(), anyInt(), anyInt()))
+        when(articleFeedService.getArticles(any(), any(), any(), any(), anyInt(), anyInt(), any()))
                 .thenReturn(new PageImpl<>(List.of(item), PageRequest.of(0, 20), 1));
 
         mockMvc.perform(get("/api/v1/intelligence/articles"))
