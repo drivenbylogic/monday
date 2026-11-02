@@ -11,6 +11,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -54,6 +55,12 @@ public class AdministrationHabitPausePeriodRepository {
     public List<AdministrationHabitPausePeriod> findByHabitId(UUID habitId) {
         String sql = "SELECT * FROM habit_pause_periods WHERE habit_id = :habitId ORDER BY start_date DESC";
         return jdbc.query(sql, new MapSqlParameterSource("habitId", habitId), PausePeriodRowMapper.INSTANCE);
+    }
+
+    public List<AdministrationHabitPausePeriod> findByHabitIds(List<UUID> habitIds) {
+        if (habitIds == null || habitIds.isEmpty()) return Collections.emptyList();
+        String sql = "SELECT * FROM habit_pause_periods WHERE habit_id IN (:habitIds)";
+        return jdbc.query(sql, new MapSqlParameterSource("habitIds", habitIds), PausePeriodRowMapper.INSTANCE);
     }
 
     public void closeOpenPauses(UUID habitId, LocalDate resumeDate) {

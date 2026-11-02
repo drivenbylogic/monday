@@ -86,98 +86,69 @@ public class GlobalSearchService {
         String pattern = "%" + query.toLowerCase() + "%";
         MapSqlParameterSource params = new MapSqlParameterSource("pattern", pattern);
 
-        // A. Projects
         try {
-            String sqlProjects = """
-                SELECT id, name, description, category, status, priority, due_at
-                FROM projects
-                WHERE LOWER(name) LIKE :pattern 
-                   OR LOWER(COALESCE(description, '')) LIKE :pattern 
-                   OR LOWER(COALESCE(category, '')) LIKE :pattern
-                ORDER BY created_at DESC LIMIT 15
+            String consolidatedSql = """
+                SELECT 'project' AS entity_type, p.id::text, p.name AS title, p.description, p.category, p.status, p.priority, p.due_at, p.created_at, NULL AS project_name, NULL::text AS project_id
+                FROM projects p
+                WHERE LOWER(p.name) LIKE :pattern 
+                   OR LOWER(COALESCE(p.description, '')) LIKE :pattern 
+                   OR LOWER(COALESCE(p.category, '')) LIKE :pattern
+
+                UNION ALL
+
+                SELECT 'milestone' AS entity_type, m.id::text, m.name AS title, m.description, 'Milestone' AS category, m.status, m.priority, m.due_at, m.created_at, pr.name AS project_name, pr.id::text AS project_id
+                FROM milestones m
+                LEFT JOIN projects pr ON m.project_id = pr.id
+                WHERE LOWER(m.name) LIKE :pattern 
+                   OR LOWER(COALESCE(m.description, '')) LIKE :pattern
+
+                UNION ALL
+
+                SELECT 'task' AS entity_type, t.id::text, t.title AS title, t.description, 'Task' AS category, t.status, t.priority, t.due_at, t.created_at, pr2.name AS project_name, pr2.id::text AS project_id
+                FROM tasks t
+                LEFT JOIN projects pr2 ON t.project_id = pr2.id
+                WHERE LOWER(t.title) LIKE :pattern 
+                   OR LOWER(COALESCE(t.description, '')) LIKE :pattern
+
+                ORDER BY created_at DESC
+                LIMIT 50
             """;
-            list.addAll(jdbc.query(sqlProjects, params, (rs, i) -> {
+            list.addAll(jdbc.query(consolidatedSql, params, (rs, i) -> {
+                String type = rs.getString("entity_type");
                 SearchResultDto item = new SearchResultDto();
                 item.setId(rs.getString("id"));
                 item.setModuleId("projects");
                 item.setModuleLabel("Projects");
-                item.setCategory("Project");
-                item.setTitle(rs.getString("name"));
-                item.setSubtitle(rs.getString("category") + " · " + rs.getString("status"));
+                item.setTitle(rs.getString("title"));
                 item.setSnippet(rs.getString("description"));
                 item.setStatus(rs.getString("status"));
                 item.setBadge(rs.getString("priority"));
-                item.setIcon("account_tree");
                 item.setDate(formatTimestamp(rs.getTimestamp("due_at")));
-                item.addMeta("type", "project");
+
+                if ("project".equals(type)) {
+                    item.setCategory("Project");
+                    item.setSubtitle(rs.getString("category") + " · " + rs.getString("status"));
+                    item.setIcon("account_tree");
+                    item.addMeta("type", "project");
+                } else if ("milestone".equals(type)) {
+                    item.setCategory("Milestone");
+                    String pName = rs.getString("project_name");
+                    item.setSubtitle((pName != null ? pName : "Project") + " · " + rs.getString("status"));
+                    item.setIcon("flag");
+                    item.addMeta("type", "milestone");
+                    item.addMeta("projectId", rs.getString("project_id"));
+                } else {
+                    item.setCategory("Task");
+                    String pName = rs.getString("project_name");
+                    item.setSubtitle((pName != null ? pName : "Task") + " · " + rs.getString("status"));
+                    item.setIcon("check_circle");
+                    item.addMeta("type", "task");
+                    item.addMeta("projectId", rs.getString("project_id"));
+                }
                 return item;
             }));
         } catch (Exception e) {
             log.error("Projects search error: {}", e.getMessage());
-        }
-
-        // B. Milestones
-        try {
-            String sqlMilestones = """
-                SELECT m.id, m.name, m.description, m.status, m.priority, m.due_at, p.name AS project_name, p.id AS project_id
-                FROM milestones m
-                LEFT JOIN projects p ON m.project_id = p.id
-                WHERE LOWER(m.name) LIKE :pattern 
-                   OR LOWER(COALESCE(m.description, '')) LIKE :pattern
-                ORDER BY m.created_at DESC LIMIT 15
-            """;
-            list.addAll(jdbc.query(sqlMilestones, params, (rs, i) -> {
-                SearchResultDto item = new SearchResultDto();
-                item.setId(rs.getString("id"));
-                item.setModuleId("projects");
-                item.setModuleLabel("Projects");
-                item.setCategory("Milestone");
-                item.setTitle(rs.getString("name"));
-                String pName = rs.getString("project_name");
-                item.setSubtitle((pName != null ? pName : "Project") + " · " + rs.getString("status"));
-                item.setSnippet(rs.getString("description"));
-                item.setStatus(rs.getString("status"));
-                item.setBadge(rs.getString("priority"));
-                item.setIcon("flag");
-                item.setDate(formatTimestamp(rs.getTimestamp("due_at")));
-                item.addMeta("type", "milestone");
-                item.addMeta("projectId", rs.getString("project_id"));
-                return item;
-            }));
-        } catch (Exception e) {
-            log.error("Milestones search error: {}", e.getMessage());
-        }
-
-        // C. Tasks
-        try {
-            String sqlTasks = """
-                SELECT t.id, t.title, t.description, t.status, t.priority, t.due_at, p.name AS project_name, p.id AS project_id
-                FROM tasks t
-                LEFT JOIN projects p ON t.project_id = p.id
-                WHERE LOWER(t.title) LIKE :pattern 
-                   OR LOWER(COALESCE(t.description, '')) LIKE :pattern
-                ORDER BY t.created_at DESC LIMIT 20
-            """;
-            list.addAll(jdbc.query(sqlTasks, params, (rs, i) -> {
-                SearchResultDto item = new SearchResultDto();
-                item.setId(rs.getString("id"));
-                item.setModuleId("projects");
-                item.setModuleLabel("Projects");
-                item.setCategory("Task");
-                item.setTitle(rs.getString("title"));
-                String pName = rs.getString("project_name");
-                item.setSubtitle((pName != null ? pName : "Task") + " · " + rs.getString("status"));
-                item.setSnippet(rs.getString("description"));
-                item.setStatus(rs.getString("status"));
-                item.setBadge(rs.getString("priority"));
-                item.setIcon("check_circle");
-                item.setDate(formatTimestamp(rs.getTimestamp("due_at")));
-                item.addMeta("type", "task");
-                item.addMeta("projectId", rs.getString("project_id"));
-                return item;
-            }));
-        } catch (Exception e) {
-            log.error("Tasks search error: {}", e.getMessage());
         }
 
         return list;
@@ -191,65 +162,55 @@ public class GlobalSearchService {
         String pattern = "%" + query.toLowerCase() + "%";
         MapSqlParameterSource params = new MapSqlParameterSource("pattern", pattern);
 
-        // A. Events
         try {
-            String sql = """
-                SELECT id, title, description, event_type, start_at, end_at, location, status, requires_prep, prep_title
-                FROM events
-                WHERE LOWER(title) LIKE :pattern
-                   OR LOWER(COALESCE(description, '')) LIKE :pattern
-                   OR LOWER(COALESCE(location, '')) LIKE :pattern
-                   OR LOWER(COALESCE(prep_title, '')) LIKE :pattern
-                ORDER BY start_at DESC LIMIT 20
+            String consolidatedSql = """
+                SELECT 'event' AS entity_type, e.id::text, e.title, e.description, e.event_type AS category, e.start_at, e.location, e.status, e.requires_prep, NULL::date AS due_date, NULL::text AS event_id, NULL AS event_title
+                FROM events e
+                WHERE LOWER(e.title) LIKE :pattern
+                   OR LOWER(COALESCE(e.description, '')) LIKE :pattern
+                   OR LOWER(COALESCE(e.location, '')) LIKE :pattern
+                   OR LOWER(COALESCE(e.prep_title, '')) LIKE :pattern
+
+                UNION ALL
+
+                SELECT 'prep' AS entity_type, p.id::text, p.text AS title, 'Event preparation commitment' AS description, 'Prep Checklist' AS category, NULL::timestamptz AS start_at, NULL AS location, CASE WHEN p.completed THEN 'COMPLETED' ELSE 'PENDING' END AS status, false AS requires_prep, p.due AS due_date, e2.id::text AS event_id, e2.title AS event_title
+                FROM event_prep_items p
+                JOIN events e2 ON p.event_id = e2.id
+                WHERE LOWER(p.text) LIKE :pattern
+
+                ORDER BY start_at DESC NULLS LAST
+                LIMIT 30
             """;
-            list.addAll(jdbc.query(sql, params, (rs, i) -> {
+            list.addAll(jdbc.query(consolidatedSql, params, (rs, i) -> {
+                String type = rs.getString("entity_type");
                 SearchResultDto item = new SearchResultDto();
                 item.setId(rs.getString("id"));
                 item.setModuleId("events");
                 item.setModuleLabel("Events");
-                item.setCategory("Event");
                 item.setTitle(rs.getString("title"));
-                String loc = rs.getString("location");
-                item.setSubtitle(rs.getString("event_type") + (loc != null && !loc.isBlank() ? " · " + loc : ""));
                 item.setSnippet(rs.getString("description"));
                 item.setStatus(rs.getString("status"));
-                item.setBadge(rs.getBoolean("requires_prep") ? "Prep Needed" : null);
-                item.setIcon("calendar_month");
-                item.setDate(formatTimestamp(rs.getTimestamp("start_at")));
-                item.addMeta("location", loc);
+
+                if ("event".equals(type)) {
+                    item.setCategory("Event");
+                    String loc = rs.getString("location");
+                    item.setSubtitle(rs.getString("category") + (loc != null && !loc.isBlank() ? " · " + loc : ""));
+                    item.setBadge(rs.getBoolean("requires_prep") ? "Prep Needed" : null);
+                    item.setIcon("calendar_month");
+                    item.setDate(formatTimestamp(rs.getTimestamp("start_at")));
+                    item.addMeta("location", loc);
+                } else {
+                    item.setCategory("Prep Checklist");
+                    item.setSubtitle("For: " + rs.getString("event_title"));
+                    item.setBadge("COMPLETED".equals(rs.getString("status")) ? "Done" : "Pending");
+                    item.setIcon("playlist_add_check");
+                    item.setDate(rs.getString("due_date"));
+                    item.addMeta("eventId", rs.getString("event_id"));
+                }
                 return item;
             }));
         } catch (Exception e) {
             log.error("Events search error: {}", e.getMessage());
-        }
-
-        // B. Event Prep Items
-        try {
-            String sqlPrep = """
-                SELECT p.id, p.text, p.completed, p.due, e.id AS event_id, e.title AS event_title
-                FROM event_prep_items p
-                JOIN events e ON p.event_id = e.id
-                WHERE LOWER(p.text) LIKE :pattern
-                ORDER BY p.due ASC LIMIT 10
-            """;
-            list.addAll(jdbc.query(sqlPrep, params, (rs, i) -> {
-                SearchResultDto item = new SearchResultDto();
-                item.setId(rs.getString("id"));
-                item.setModuleId("events");
-                item.setModuleLabel("Events");
-                item.setCategory("Prep Checklist");
-                item.setTitle(rs.getString("text"));
-                item.setSubtitle("For: " + rs.getString("event_title"));
-                item.setSnippet("Event preparation commitment");
-                item.setStatus(rs.getBoolean("completed") ? "COMPLETED" : "PENDING");
-                item.setBadge(rs.getBoolean("completed") ? "Done" : "Pending");
-                item.setIcon("playlist_add_check");
-                item.setDate(rs.getString("due"));
-                item.addMeta("eventId", rs.getString("event_id"));
-                return item;
-            }));
-        } catch (Exception e) {
-            log.error("Event prep items search error: {}", e.getMessage());
         }
 
         return list;

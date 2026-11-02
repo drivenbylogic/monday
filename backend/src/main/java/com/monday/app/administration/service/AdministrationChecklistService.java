@@ -8,8 +8,8 @@ import com.monday.app.shared.exception.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class AdministrationChecklistService {
@@ -39,6 +39,56 @@ public class AdministrationChecklistService {
         return repository.findChecklistsByTarget(recordType.toUpperCase().trim(), recordId).stream()
                 .map(this::toDto)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Map<UUID, ChecklistDto> getFirstChecklistByTargets(String recordType, Collection<UUID> recordIds) {
+        if (recordIds == null || recordIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<AdministrationChecklist> checklists = repository.findChecklistsByTargets(recordType.toUpperCase().trim(), recordIds);
+        if (checklists.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        // Keep the first/latest checklist for each recordId
+        Map<UUID, AdministrationChecklist> checklistByRecordId = new LinkedHashMap<>();
+        for (AdministrationChecklist c : checklists) {
+            if (c.getAdministrationRecordId() != null) {
+                checklistByRecordId.putIfAbsent(c.getAdministrationRecordId(), c);
+            }
+        }
+
+        List<UUID> checklistIds = checklistByRecordId.values().stream().map(AdministrationChecklist::getId).toList();
+        List<AdministrationChecklistItem> allItems = repository.findItemsByChecklistIds(checklistIds);
+        Map<UUID, List<AdministrationChecklistItem>> itemsByChecklistId = allItems.stream()
+                .collect(Collectors.groupingBy(AdministrationChecklistItem::getChecklistId));
+
+        Map<UUID, ChecklistDto> result = new HashMap<>();
+        for (Map.Entry<UUID, AdministrationChecklist> entry : checklistByRecordId.entrySet()) {
+            AdministrationChecklist c = entry.getValue();
+            List<AdministrationChecklistItem> items = itemsByChecklistId.getOrDefault(c.getId(), Collections.emptyList());
+            List<ChecklistItemDto> itemDtos = items.stream().map(this::toItemDto).toList();
+            int total = itemDtos.size();
+            int completed = (int) itemDtos.stream().filter(ChecklistItemDto::completed).count();
+            int progress = total > 0 ? (completed * 100) / total : 0;
+
+            result.put(entry.getKey(), new ChecklistDto(
+                    c.getId(),
+                    c.getTitle(),
+                    c.getDescription(),
+                    c.getAdministrationRecordType(),
+                    c.getAdministrationRecordId(),
+                    c.getStatus(),
+                    itemDtos,
+                    completed,
+                    total,
+                    progress,
+                    c.getCreatedAt(),
+                    c.getUpdatedAt()
+            ));
+        }
+        return result;
     }
 
     @Transactional(readOnly = true)

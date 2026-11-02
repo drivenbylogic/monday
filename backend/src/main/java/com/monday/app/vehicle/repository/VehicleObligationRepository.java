@@ -50,6 +50,12 @@ public class VehicleObligationRepository {
                 new MapSqlParameterSource("vehicleId", vehicleId), VehicleObligationRowMapper.INSTANCE);
     }
 
+    public List<VehicleObligation> findByVehicleIds(java.util.Collection<UUID> vehicleIds) {
+        if (vehicleIds == null || vehicleIds.isEmpty()) return java.util.Collections.emptyList();
+        return jdbc.query("SELECT * FROM vehicle_obligations WHERE vehicle_id IN (:vehicleIds) ORDER BY due_date",
+                new MapSqlParameterSource("vehicleIds", vehicleIds), VehicleObligationRowMapper.INSTANCE);
+    }
+
     public void deleteById(UUID id) {
         jdbc.update("DELETE FROM vehicle_obligations WHERE id = :id", new MapSqlParameterSource("id", id));
     }

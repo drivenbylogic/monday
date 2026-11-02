@@ -50,6 +50,31 @@ public class AdministrationHabitOccurrenceRepository {
         return jdbc.queryForObject(sql, toParams(o), HabitOccurrenceRowMapper.INSTANCE);
     }
 
+    public void batchSave(List<AdministrationHabitOccurrence> occurrences) {
+        if (occurrences == null || occurrences.isEmpty()) return;
+        String sql = """
+                INSERT INTO habit_occurrences (
+                    id, habit_id, schedule_version_id, scheduled_date,
+                    target_value_snapshot, minimum_target_snapshot, target_unit_snapshot,
+                    status, actual_value, completed_at, notes, skip_reason
+                ) VALUES (
+                    :id, :habitId, :scheduleVersionId, :scheduledDate,
+                    :targetValueSnapshot, :minimumTargetSnapshot, :targetUnitSnapshot,
+                    :status, :actualValue, :completedAt, :notes, :skipReason
+                )
+                ON CONFLICT (habit_id, scheduled_date) DO NOTHING
+                """;
+        MapSqlParameterSource[] batchParams = new MapSqlParameterSource[occurrences.size()];
+        for (int i = 0; i < occurrences.size(); i++) {
+            AdministrationHabitOccurrence o = occurrences.get(i);
+            if (o.getId() == null) {
+                o.setId(UUID.randomUUID());
+            }
+            batchParams[i] = toParams(o);
+        }
+        jdbc.batchUpdate(sql, batchParams);
+    }
+
     public AdministrationHabitOccurrence update(AdministrationHabitOccurrence o) {
         String sql = """
                 UPDATE habit_occurrences SET

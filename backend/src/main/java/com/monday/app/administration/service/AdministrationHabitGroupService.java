@@ -8,14 +8,21 @@ import com.monday.app.administration.repository.AdministrationHabitGroupReposito
 import com.monday.app.administration.repository.AdministrationHabitOccurrenceRepository;
 import com.monday.app.administration.repository.AdministrationHabitRepository;
 import com.monday.app.security.SecurityUtils;
+import com.monday.app.shared.cache.CacheInvalidationService;
+import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.shared.exception.ResourceNotFoundException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class AdministrationHabitGroupService {
@@ -25,6 +32,7 @@ public class AdministrationHabitGroupService {
     private final AdministrationHabitOccurrenceRepository occurrenceRepository;
     private final AdministrationHabitService habitService;
     private final AdministrationHabitExecutionService executionService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public AdministrationHabitGroupService(
             AdministrationHabitGroupRepository groupRepository,
@@ -33,25 +41,52 @@ public class AdministrationHabitGroupService {
             AdministrationHabitService habitService,
             AdministrationHabitExecutionService executionService
     ) {
+        this(groupRepository, habitRepository, occurrenceRepository, habitService, executionService, null);
+    }
+
+    @Autowired
+    public AdministrationHabitGroupService(
+            AdministrationHabitGroupRepository groupRepository,
+            AdministrationHabitRepository habitRepository,
+            AdministrationHabitOccurrenceRepository occurrenceRepository,
+            AdministrationHabitService habitService,
+            AdministrationHabitExecutionService executionService,
+            @Nullable CacheInvalidationService cacheInvalidationService
+    ) {
         this.groupRepository = groupRepository;
         this.habitRepository = habitRepository;
         this.occurrenceRepository = occurrenceRepository;
         this.habitService = habitService;
         this.executionService = executionService;
+        this.cacheInvalidationService = cacheInvalidationService;
+    }
+
+    private void evictHabitCaches() {
+        if (cacheInvalidationService != null) {
+            cacheInvalidationService.evictAllAfterCommit(
+                    CacheNames.HABIT_ANALYTICS,
+                    CacheNames.HABIT_REPORTS,
+                    CacheNames.HABIT_TODAY,
+                    CacheNames.HABIT_WEEK,
+                    CacheNames.HOME_DASHBOARD
+            );
+        }
     }
 
     @Transactional(readOnly = true)
     public List<HabitGroupDto> getGroups() {
         UUID userId = SecurityUtils.getCurrentUserId().orElse(null);
         List<AdministrationHabitGroup> groups = groupRepository.findAllByUserId(userId);
-        List<AdministrationHabit> allHabits = habitRepository.findAllForUser(userId);
+        if (groups.isEmpty()) return Collections.emptyList();
+
+        List<HabitDto> allHabitsDtos = habitService.getHabits(null, null, null, null);
+        Map<UUID, List<HabitDto>> habitsByGroup = allHabitsDtos.stream()
+                .filter(h -> h.groupId() != null)
+                .collect(Collectors.groupingBy(HabitDto::groupId));
 
         List<HabitGroupDto> result = new ArrayList<>();
         for (AdministrationHabitGroup g : groups) {
-            List<HabitDto> groupHabits = allHabits.stream()
-                    .filter(h -> g.getId().equals(h.getGroupId()))
-                    .map(h -> habitService.toDto(h, g.getName()))
-                    .toList();
+            List<HabitDto> groupHabits = habitsByGroup.getOrDefault(g.getId(), Collections.emptyList());
 
             result.add(new HabitGroupDto(
                     g.getId(),
@@ -74,9 +109,7 @@ public class AdministrationHabitGroupService {
         AdministrationHabitGroup g = groupRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Habit group not found with id: " + id));
 
-        List<HabitDto> groupHabits = habitRepository.search(userId, null, null, id, null).stream()
-                .map(h -> habitService.toDto(h, g.getName()))
-                .toList();
+        List<HabitDto> groupHabits = habitService.getHabits(null, null, id, null);
 
         return new HabitGroupDto(
                 g.getId(),
@@ -113,6 +146,7 @@ public class AdministrationHabitGroupService {
             }
         }
 
+        evictHabitCaches();
         return getGroupById(saved.getId());
     }
 
@@ -146,6 +180,7 @@ public class AdministrationHabitGroupService {
             }
         }
 
+        evictHabitCaches();
         return getGroupById(id);
     }
 
@@ -163,6 +198,7 @@ public class AdministrationHabitGroupService {
         }
 
         groupRepository.deleteById(id);
+        evictHabitCaches();
     }
 
     /**
@@ -185,6 +221,7 @@ public class AdministrationHabitGroupService {
                 }
             });
         }
+        evictHabitCaches();
         return results;
     }
 }

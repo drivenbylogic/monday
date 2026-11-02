@@ -11,6 +11,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -88,6 +90,22 @@ public class AdministrationChecklistRepository {
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("recordType", recordType)
                 .addValue("recordId", recordId);
+        return jdbc.query(sql, params, ChecklistRowMapper.INSTANCE);
+    }
+
+    public List<AdministrationChecklist> findChecklistsByTargets(String recordType, Collection<UUID> recordIds) {
+        if (recordIds == null || recordIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        String sql = """
+                SELECT * FROM administration_checklists
+                WHERE administration_record_type = :recordType
+                  AND administration_record_id IN (:recordIds)
+                ORDER BY created_at DESC
+                """;
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("recordType", recordType)
+                .addValue("recordIds", recordIds);
         return jdbc.query(sql, params, ChecklistRowMapper.INSTANCE);
     }
 
@@ -171,6 +189,14 @@ public class AdministrationChecklistRepository {
     public List<AdministrationChecklistItem> findItemsByChecklistId(UUID checklistId) {
         String sql = "SELECT * FROM administration_checklist_items WHERE checklist_id = :checklistId ORDER BY position ASC, created_at ASC";
         return jdbc.query(sql, new MapSqlParameterSource("checklistId", checklistId), ItemRowMapper.INSTANCE);
+    }
+
+    public List<AdministrationChecklistItem> findItemsByChecklistIds(Collection<UUID> checklistIds) {
+        if (checklistIds == null || checklistIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        String sql = "SELECT * FROM administration_checklist_items WHERE checklist_id IN (:checklistIds) ORDER BY position ASC, created_at ASC";
+        return jdbc.query(sql, new MapSqlParameterSource("checklistIds", checklistIds), ItemRowMapper.INSTANCE);
     }
 
     public void deleteItemById(UUID itemId) {

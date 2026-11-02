@@ -150,4 +150,26 @@ class ProjectControllerTest {
 
         verify(projectService).create(any(com.monday.app.project.entity.Project.class));
     }
+
+    @Test
+    void getVelocity_returnsVelocityMetrics() throws Exception {
+        com.monday.app.project.dto.VelocityMetricsResponse velocity = new com.monday.app.project.dto.VelocityMetricsResponse();
+        velocity.setCurrentWeekDailyCompletions(Map.of("monday", 2, "tuesday", 3));
+        velocity.setPastWeekDailyCompletions(Map.of("monday", 1, "tuesday", 1));
+        velocity.setCurrentWeekTasksClosed(5);
+        velocity.setPreviousWeekTasksClosed(2);
+        velocity.setVelocityPercentageChange(150.0);
+        velocity.setVelocityHealthScore(75.0);
+
+        when(projectService.getVelocityMetrics()).thenReturn(velocity);
+
+        mockMvc.perform(get("/api/v1/projects/velocity"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentWeekTasksClosed").value(5))
+                .andExpect(jsonPath("$.previousWeekTasksClosed").value(2))
+                .andExpect(jsonPath("$.velocityPercentageChange").value(150.0))
+                .andExpect(jsonPath("$.currentWeekDailyCompletions.monday").value(2));
+
+        verify(projectService).getVelocityMetrics();
+    }
 }

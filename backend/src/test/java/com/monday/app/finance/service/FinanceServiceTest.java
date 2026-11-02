@@ -90,13 +90,14 @@ class FinanceServiceTest {
         t2.setDescription("Item 2");
 
         when(categoryRepository.findAll()).thenReturn(Collections.emptyList());
+        when(accountRepository.findAll()).thenReturn(Collections.emptyList());
         when(creditAccountRepository.findAll()).thenReturn(Collections.emptyList());
-        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(transactionRepository.batchSave(anyList())).thenAnswer(inv -> inv.getArgument(0));
 
         List<Transaction> created = financeService.createTransactionsBulk(List.of(t1, t2));
 
         assertEquals(2, created.size());
-        verify(transactionRepository, times(2)).save(any(Transaction.class));
+        verify(transactionRepository).batchSave(anyList());
     }
 
     @Test

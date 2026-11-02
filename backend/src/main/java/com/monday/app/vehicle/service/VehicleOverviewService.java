@@ -288,28 +288,19 @@ public class VehicleOverviewService {
         }
 
         // 7. Costs this month
-        List<VehicleFuelLog> fuelLogs = fuelLogRepository.findByVehicleId(vehicleId);
-        BigDecimal fuelThisMonth = fuelLogs.stream()
-                .filter(l -> l.getLogDate().format(DateTimeFormatter.ofPattern("yyyy-MM")).equals(currentYm))
-                .map(l -> l.getTotalCost() != null ? l.getTotalCost() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        LocalDate startOfMonth = today.withDayOfMonth(1);
+        LocalDate endOfMonth = today.withDayOfMonth(today.lengthOfMonth());
 
-        List<VehicleServiceRecord> serviceRecords = serviceRecordRepository.findByVehicleId(vehicleId);
-        BigDecimal serviceThisMonth = serviceRecords.stream()
-                .filter(s -> s.getServiceDate().format(DateTimeFormatter.ofPattern("yyyy-MM")).equals(currentYm))
-                .map(s -> s.getCost() != null ? s.getCost() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal fuelThisMonth = fuelLogRepository.sumFuelCostByVehicleIdAndDateRange(vehicleId, startOfMonth, endOfMonth);
+        if (fuelThisMonth == null) fuelThisMonth = BigDecimal.ZERO;
+
+        BigDecimal serviceThisMonth = serviceRecordRepository.sumServiceCostByVehicleIdAndDateRange(vehicleId, startOfMonth, endOfMonth);
+        if (serviceThisMonth == null) serviceThisMonth = BigDecimal.ZERO;
 
         BigDecimal totalExpensesThisMonth = fuelThisMonth.add(serviceThisMonth);
 
         // Latest Fuel Efficiency
-        Double latestEfficiency = null;
-        for (VehicleFuelLog log : fuelLogs) {
-            if (log.getTripEfficiency() != null && log.getTripEfficiency().doubleValue() > 0) {
-                latestEfficiency = log.getTripEfficiency().doubleValue();
-                break;
-            }
-        }
+        Double latestEfficiency = fuelLogRepository.findLatestTripEfficiency(vehicleId);
 
         // Metric Card DTO
         MetricCardDto metrics = new MetricCardDto(

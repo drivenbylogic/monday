@@ -63,8 +63,11 @@ public class CacheConfig {
         // Finance reference data (categories, accounts, cards): 30 minutes, 200 entries
         caches.add(buildCache(CacheNames.FINANCE_REFERENCE, Duration.ofMinutes(30), 200));
 
-        // Projects metrics & velocity: 5 minutes, 100 entries
+        // Projects metrics: 5 minutes, 100 entries
         caches.add(buildCache(CacheNames.PROJECT_METRICS, Duration.ofMinutes(5), 100));
+
+        // Projects velocity: 5 minutes, 100 entries
+        caches.add(buildCache(CacheNames.PROJECT_VELOCITY, Duration.ofMinutes(5), 100));
 
         // Vehicle overview: 5 minutes, 100 entries
         caches.add(buildCache(CacheNames.VEHICLE_OVERVIEW, Duration.ofMinutes(5), 100));
@@ -77,6 +80,12 @@ public class CacheConfig {
 
         // Habit reports & insights: 10 minutes, 100 entries
         caches.add(buildCache(CacheNames.HABIT_REPORTS, Duration.ofMinutes(10), 100));
+
+        // Habit today view: 5 minutes, 100 entries
+        caches.add(buildCache(CacheNames.HABIT_TODAY, Duration.ofMinutes(5), 100));
+
+        // Habit week view: 5 minutes, 100 entries
+        caches.add(buildCache(CacheNames.HABIT_WEEK, Duration.ofMinutes(5), 100));
 
         // Global search: 2 minutes, 200 entries
         caches.add(buildCache(CacheNames.GLOBAL_SEARCH, Duration.ofMinutes(2), 200));

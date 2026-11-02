@@ -465,7 +465,6 @@ BEFORE UPDATE ON vehicle_service_records
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE INDEX IF NOT EXISTS idx_vehicle_service_records_veh_date ON vehicle_service_records(vehicle_id, service_date DESC);
-CREATE INDEX IF NOT EXISTS idx_vehicle_service_vehicle_id ON vehicle_service_records(vehicle_id);
 
 CREATE TABLE IF NOT EXISTS vehicle_service_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -505,7 +504,6 @@ BEFORE UPDATE ON vehicle_maintenance_schedules
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE INDEX IF NOT EXISTS idx_vehicle_maint_vehicle_id ON vehicle_maintenance_schedules(vehicle_id);
-CREATE INDEX IF NOT EXISTS idx_vehicle_maintenance_schedules_veh ON vehicle_maintenance_schedules(vehicle_id);
 
 CREATE TABLE IF NOT EXISTS vehicle_obligations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1254,3 +1252,17 @@ CREATE TABLE IF NOT EXISTS habit_reminders (
 CREATE TRIGGER trg_habit_reminders_updated_at
 BEFORE UPDATE ON habit_reminders
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+
+-- =============================================================================
+-- Query Performance Optimization Indexes (V14)
+-- =============================================================================
+CREATE INDEX IF NOT EXISTS idx_milestones_project_due ON milestones (project_id, due_at ASC);
+CREATE INDEX IF NOT EXISTS idx_milestones_active_due ON milestones (due_at ASC) WHERE status NOT IN ('COMPLETED', 'CANCELLED');
+CREATE INDEX IF NOT EXISTS idx_event_prep_items_event_id ON event_prep_items (event_id);
+CREATE INDEX IF NOT EXISTS idx_deep_work_project_id ON deep_work_sessions (project_id);
+CREATE INDEX IF NOT EXISTS idx_deep_work_started_at ON deep_work_sessions (started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_finance_commitments_due_status ON finance_commitments (due_date ASC, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_status_completed_at ON tasks (status, completed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_article_summaries_feed ON article_summaries (article_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_checklist_items_pending ON administration_checklist_items (checklist_id) WHERE is_completed = false;

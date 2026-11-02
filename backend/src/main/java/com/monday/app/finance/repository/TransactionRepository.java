@@ -39,6 +39,38 @@ public class TransactionRepository {
         return jdbc.queryForObject(sql, toParams(id, txn), TransactionRowMapper.INSTANCE);
     }
 
+    public List<Transaction> batchSave(List<Transaction> txns) {
+        if (txns == null || txns.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        for (Transaction txn : txns) {
+            if (txn.getId() == null) {
+                txn.setId(UUID.randomUUID());
+            }
+            if (txn.getTransactionAt() == null) {
+                txn.setTransactionAt(Instant.now());
+            }
+        }
+
+        String sql = """
+                INSERT INTO transactions (id, transaction_type, amount, transaction_at,
+                    category_id, payment_method, description, notes,
+                    linked_module, linked_entity_id, linked_entity_type, account_id, credit_card_id)
+                VALUES (:id, :transactionType, :amount, :transactionAt,
+                    :categoryId, :paymentMethod, :description, :notes,
+                    :linkedModule, :linkedEntityId, :linkedEntityType, :accountId, :creditCardId)
+                """;
+
+        MapSqlParameterSource[] batchParams = new MapSqlParameterSource[txns.size()];
+        for (int i = 0; i < txns.size(); i++) {
+            Transaction t = txns.get(i);
+            batchParams[i] = toParams(t.getId(), t);
+        }
+
+        jdbc.batchUpdate(sql, batchParams);
+        return txns;
+    }
+
     public Transaction update(Transaction txn) {
         String sql = """
                 UPDATE transactions SET

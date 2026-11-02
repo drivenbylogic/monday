@@ -19,12 +19,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Date;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class FinanceService {
@@ -364,11 +366,76 @@ public class FinanceService {
         if (transactions == null || transactions.isEmpty()) {
             return Collections.emptyList();
         }
-        List<Transaction> created = new ArrayList<>();
+
+        // 1. Preload categories once
+        List<BudgetCategory> allCats = categoryRepository.findAll();
+        Set<UUID> validCatIds = allCats.stream().map(BudgetCategory::getId).collect(Collectors.toSet());
+
+        // 2. Preload finance accounts
+        Set<UUID> validAccountIds = accountRepository.findAll().stream()
+                .map(FinanceAccount::getId).collect(Collectors.toSet());
+
+        // 3. Preload credit cards
+        List<CreditAccount> allCards = creditAccountRepository.findAll();
+        Set<UUID> validCardIds = allCards.stream().map(CreditAccount::getId).collect(Collectors.toSet());
+
+        Map<UUID, BigDecimal> accountDeltas = new HashMap<>();
+
         for (Transaction txn : transactions) {
-            created.add(createTransaction(txn));
+            // Category resolution in memory
+            if (txn.getCategoryId() == null) {
+                for (BudgetCategory cat : allCats) {
+                    if ((txn.getDescription() != null && txn.getDescription().toLowerCase().contains(cat.getName().toLowerCase())) ||
+                        (txn.getNotes() != null && txn.getNotes().toLowerCase().contains(cat.getName().toLowerCase()))) {
+                        txn.setCategoryId(cat.getId());
+                        break;
+                    }
+                }
+            }
+            if (txn.getCategoryId() != null && !validCatIds.contains(txn.getCategoryId())) {
+                txn.setCategoryId(null);
+            }
+
+            // Linked module validation
+            if (txn.getLinkedModule() != null && !VALID_LINKED_MODULES.contains(txn.getLinkedModule().toUpperCase())) {
+                throw new IllegalArgumentException("Invalid linkedModule: " + txn.getLinkedModule() + ". Allowed: " + VALID_LINKED_MODULES);
+            }
+            if (txn.getLinkedModule() != null) {
+                txn.setLinkedModule(txn.getLinkedModule().toUpperCase());
+            }
+
+            // Account balance delta accumulation
+            UUID accountId = txn.getAccountId();
+            if (accountId != null && validAccountIds.contains(accountId)) {
+                BigDecimal delta = txn.getAmount() != null ? txn.getAmount() : BigDecimal.ZERO;
+                if ("EXPENSE".equalsIgnoreCase(txn.getTransactionType())) {
+                    delta = delta.negate();
+                }
+                accountDeltas.merge(accountId, delta, BigDecimal::add);
+            } else {
+                txn.setAccountId(null);
+            }
+
+            if (txn.getCreditCardId() != null && !validCardIds.contains(txn.getCreditCardId())) {
+                txn.setCreditCardId(null);
+            }
+
+            // Credit card commitment and balance handling
+            processCreditCardTransactionOnCreate(txn);
         }
-        return created;
+
+        // 4. Batch save transactions
+        transactionRepository.batchSave(transactions);
+
+        // 5. Grouped atomic account balance updates
+        for (Map.Entry<UUID, BigDecimal> entry : accountDeltas.entrySet()) {
+            accountRepository.adjustBalance(entry.getKey(), entry.getValue());
+        }
+
+        // 6. Evict caches once at the end
+        evictFinancialCalculations();
+
+        return transactions;
     }
 
     @Transactional
@@ -1115,24 +1182,36 @@ public class FinanceService {
             cycle = YearMonth.now().toString();
         }
 
+        YearMonth ym = YearMonth.parse(cycle);
+        LocalDate startOfMonth = ym.atDay(1);
+        LocalDate endOfMonth = ym.atEndOfMonth();
+        LocalDate startOfNextMonth = ym.plusMonths(1).atDay(1);
+        Timestamp cycleStart = Timestamp.valueOf(startOfMonth.atStartOfDay());
+        Timestamp cycleEnd = Timestamp.valueOf(startOfNextMonth.atStartOfDay());
+
         BigDecimal allowance = getMonthlyAllowance();
 
         String sql = """
             WITH active_month_budgets AS (
                 SELECT DISTINCT ON (category_id) amount
                 FROM budgets
-                WHERE (to_char(period_start, 'YYYY-MM') <= :cycle AND to_char(period_end, 'YYYY-MM') >= :cycle)
+                WHERE (period_start <= :endOfMonth AND period_end >= :startOfMonth)
                    OR period_type = 'MONTHLY'
                 ORDER BY category_id,
-                         CASE WHEN to_char(period_start, 'YYYY-MM') <= :cycle AND to_char(period_end, 'YYYY-MM') >= :cycle THEN 0 ELSE 1 END,
+                         CASE WHEN period_start <= :endOfMonth AND period_end >= :startOfMonth THEN 0 ELSE 1 END,
                          updated_at DESC
             )
             SELECT
                 (SELECT COALESCE(SUM(balance), 0) FROM finance_accounts) as "totalLiquidReserves",
                 (SELECT COALESCE(SUM(amount), 0) FROM active_month_budgets) as "monthlyCap",
-                (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE UPPER(transaction_type) = 'EXPENSE' AND to_char(transaction_at, 'YYYY-MM') = :cycle) as "monthlySpent"
+                (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE UPPER(transaction_type) = 'EXPENSE' AND transaction_at >= :cycleStart AND transaction_at < :cycleEnd) as "monthlySpent"
         """;
-        Map<String, Object> data = jdbc.queryForMap(sql, new MapSqlParameterSource("cycle", cycle));
+        MapSqlParameterSource pulseParams = new MapSqlParameterSource()
+                .addValue("startOfMonth", Date.valueOf(startOfMonth))
+                .addValue("endOfMonth", Date.valueOf(endOfMonth))
+                .addValue("cycleStart", cycleStart)
+                .addValue("cycleEnd", cycleEnd);
+        Map<String, Object> data = jdbc.queryForMap(sql, pulseParams);
 
         BigDecimal budgetedCap = (BigDecimal) data.get("monthlyCap");
         if (budgetedCap == null) budgetedCap = BigDecimal.ZERO;
@@ -1183,7 +1262,7 @@ public class FinanceService {
             String unbudgetedBeforeTodaySql = """
                 SELECT COALESCE(SUM(t.amount), 0) FROM transactions t
                 WHERE UPPER(t.transaction_type) = 'EXPENSE'
-                  AND to_char(t.transaction_at, 'YYYY-MM') = :cycle
+                  AND t.transaction_at >= :cycleStart
                   AND t.transaction_at < CURRENT_DATE::timestamp
                   AND (t.linked_entity_type IS NULL OR UPPER(t.linked_entity_type) != 'COMMITMENT')
                   AND t.description NOT ILIKE '%settlement%'
@@ -1194,7 +1273,7 @@ public class FinanceService {
                   ))
             """;
             BigDecimal unbudgetedBeforeToday = jdbc.queryForObject(unbudgetedBeforeTodaySql,
-                    new MapSqlParameterSource("cycle", cycle), BigDecimal.class);
+                    new MapSqlParameterSource("cycleStart", cycleStart), BigDecimal.class);
             if (unbudgetedBeforeToday == null) unbudgetedBeforeToday = BigDecimal.ZERO;
 
             // Unbudgeted spent today
@@ -1224,12 +1303,12 @@ public class FinanceService {
             String spentBeforeTodaySql = """
                 SELECT COALESCE(SUM(amount), 0) FROM transactions
                 WHERE UPPER(transaction_type) = 'EXPENSE'
-                  AND to_char(transaction_at, 'YYYY-MM') = :cycle
+                  AND transaction_at >= :cycleStart
                   AND transaction_at < CURRENT_DATE::timestamp
                   AND (linked_entity_type IS NULL OR UPPER(linked_entity_type) != 'COMMITMENT')
                   AND description NOT ILIKE '%settlement%'
             """;
-            BigDecimal spentBeforeToday = jdbc.queryForObject(spentBeforeTodaySql, new MapSqlParameterSource("cycle", cycle), BigDecimal.class);
+            BigDecimal spentBeforeToday = jdbc.queryForObject(spentBeforeTodaySql, new MapSqlParameterSource("cycleStart", cycleStart), BigDecimal.class);
             if (spentBeforeToday == null) spentBeforeToday = BigDecimal.ZERO;
 
             BigDecimal remainingCap = cap.subtract(spentBeforeToday).max(BigDecimal.ZERO);
@@ -1262,6 +1341,9 @@ public class FinanceService {
         YearMonth ym = YearMonth.parse(cycle);
         LocalDate startOfMonth = ym.atDay(1);
         LocalDate endOfMonth = ym.atEndOfMonth();
+        LocalDate startOfNextMonth = ym.plusMonths(1).atDay(1);
+        Timestamp cycleStart = Timestamp.valueOf(startOfMonth.atStartOfDay());
+        Timestamp cycleEnd = Timestamp.valueOf(startOfNextMonth.atStartOfDay());
 
         // 1. Overall monthly totals
         String totalsSql = """
@@ -1271,9 +1353,12 @@ public class FinanceService {
                 COUNT(CASE WHEN UPPER(transaction_type) = 'EXPENSE' THEN 1 END) as "expenseCount",
                 COUNT(*) as "totalCount"
             FROM transactions
-            WHERE to_char(transaction_at, 'YYYY-MM') = :cycle
+            WHERE transaction_at >= :cycleStart AND transaction_at < :cycleEnd
         """;
-        Map<String, Object> totals = jdbc.queryForMap(totalsSql, new MapSqlParameterSource("cycle", cycle));
+        Map<String, Object> totals = jdbc.queryForMap(totalsSql,
+                new MapSqlParameterSource()
+                        .addValue("cycleStart", cycleStart)
+                        .addValue("cycleEnd", cycleEnd));
         BigDecimal totalExpense = (BigDecimal) totals.get("totalExpense");
         BigDecimal totalIncome = (BigDecimal) totals.get("totalIncome");
         long expenseCount = ((Number) totals.get("expenseCount")).longValue();
@@ -1314,7 +1399,7 @@ public class FinanceService {
                 FROM transactions t
                 LEFT JOIN budget_categories bc ON t.category_id = bc.id
                 WHERE UPPER(t.transaction_type) = 'EXPENSE'
-                  AND to_char(t.transaction_at, 'YYYY-MM') = :cycle
+                  AND t.transaction_at >= :cycleStart AND t.transaction_at < :cycleEnd
                 GROUP BY t.category_id, bc.name
             ),
             month_budgets AS (
@@ -1331,16 +1416,18 @@ public class FinanceService {
             )
             SELECT
                 COALESCE(ce.category_id, mb.category_id) as category_id,
-                COALESCE(ce.category_name, (SELECT name FROM budget_categories WHERE id = mb.category_id), 'General') as category_name,
+                COALESCE(ce.category_name, bc2.name, 'General') as category_name,
                 COALESCE(mb.budget_amount, 0) as budget_amount,
                 COALESCE(ce.spent, 0) as spent_amount
             FROM cat_expenses ce
             FULL OUTER JOIN month_budgets mb ON ce.category_id = mb.category_id
+            LEFT JOIN budget_categories bc2 ON mb.category_id = bc2.id
             ORDER BY spent_amount DESC, budget_amount DESC
         """;
         List<Map<String, Object>> rawCatBreakdown = jdbc.queryForList(catReportSql,
                 new MapSqlParameterSource()
-                        .addValue("cycle", cycle)
+                        .addValue("cycleStart", cycleStart)
+                        .addValue("cycleEnd", cycleEnd)
                         .addValue("startOfMonth", Date.valueOf(startOfMonth))
                         .addValue("endOfMonth", Date.valueOf(endOfMonth)));
 
@@ -1389,7 +1476,7 @@ public class FinanceService {
                        SUM(amount) as spend
                 FROM transactions
                 WHERE UPPER(transaction_type) = 'EXPENSE'
-                  AND to_char(transaction_at, 'YYYY-MM') = :cycle
+                  AND transaction_at >= :cycleStart AND transaction_at < :cycleEnd
                 GROUP BY tx_date
             )
             SELECT to_char(md.day_date, 'DD') as day,
@@ -1402,7 +1489,8 @@ public class FinanceService {
         """;
         List<Map<String, Object>> dailyExpenses = jdbc.queryForList(dailySql,
                 new MapSqlParameterSource()
-                        .addValue("cycle", cycle)
+                        .addValue("cycleStart", cycleStart)
+                        .addValue("cycleEnd", cycleEnd)
                         .addValue("startOfMonth", Date.valueOf(startOfMonth))
                         .addValue("endOfMonth", Date.valueOf(endOfMonth)));
 
@@ -1423,11 +1511,13 @@ public class FinanceService {
             FROM transactions t
             LEFT JOIN budget_categories bc ON t.category_id = bc.id
             LEFT JOIN finance_accounts fa ON t.account_id = fa.id
-            WHERE to_char(t.transaction_at, 'YYYY-MM') = :cycle
+            WHERE t.transaction_at >= :cycleStart AND t.transaction_at < :cycleEnd
             ORDER BY t.transaction_at DESC
         """;
         List<Map<String, Object>> monthTransactions = jdbc.queryForList(txListSql,
-                new MapSqlParameterSource("cycle", cycle));
+                new MapSqlParameterSource()
+                        .addValue("cycleStart", cycleStart)
+                        .addValue("cycleEnd", cycleEnd));
 
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("cycle", cycle);
@@ -1549,13 +1639,14 @@ public class FinanceService {
         } else {
             YearMonth ym = YearMonth.parse(targetCycle);
             LocalDate startOfMonth = ym.atDay(1);
-            params.addValue("cycle", targetCycle);
+            LocalDate endOfMonth = ym.atEndOfMonth();
+            params.addValue("endOfMonth", Date.valueOf(endOfMonth));
             String cycleFilter;
             if (isCurrentMonth) {
-                params.addValue("startOfMonth", Date.valueOf(startOfMonth));
-                cycleFilter = "(to_char(fc.due_date, 'YYYY-MM') = :cycle OR fc.due_date < :startOfMonth)";
+                cycleFilter = "fc.due_date <= :endOfMonth";
             } else {
-                cycleFilter = "to_char(fc.due_date, 'YYYY-MM') = :cycle";
+                params.addValue("startOfMonth", Date.valueOf(startOfMonth));
+                cycleFilter = "(fc.due_date >= :startOfMonth AND fc.due_date <= :endOfMonth)";
             }
 
             sql = """

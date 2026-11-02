@@ -34,10 +34,13 @@ class CacheConfigTest {
                 CacheNames.FINANCE_MONTHLY_REPORT,
                 CacheNames.FINANCE_REFERENCE,
                 CacheNames.PROJECT_METRICS,
+                CacheNames.PROJECT_VELOCITY,
                 CacheNames.VEHICLE_OVERVIEW,
                 CacheNames.VEHICLE_ANALYTICS,
                 CacheNames.HABIT_ANALYTICS,
                 CacheNames.HABIT_REPORTS,
+                CacheNames.HABIT_TODAY,
+                CacheNames.HABIT_WEEK,
                 CacheNames.GLOBAL_SEARCH,
                 CacheNames.CORE_WEATHER
         );

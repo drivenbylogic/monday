@@ -54,23 +54,23 @@ public class AdministrationHabitInsightService {
             List<AdministrationHabitOccurrence> list = byHabit.getOrDefault(h.getId(), Collections.emptyList());
             if (list.size() < 7) continue;
 
-            // 1. Streak milestones
-            HabitDto habitDto = habitService.getById(h.getId());
-            if (habitDto.currentStreak() >= 30) {
+            // 1. Streak milestones computed in-memory
+            int currentStreak = AdministrationHabitService.computeCurrentStreakFromOccurrences(list, today);
+            if (currentStreak >= 30) {
                 insights.add(new HabitInsightDto(
                         "streak-30-" + h.getId(),
                         "STREAK",
                         "Elite 30-Day Milestone",
-                        h.getName() + " has maintained an incredible " + habitDto.currentStreak() + "-day streak!",
+                        h.getName() + " has maintained an incredible " + currentStreak + "-day streak!",
                         "POSITIVE",
                         h.getId()
                 ));
-            } else if (habitDto.currentStreak() >= 7) {
+            } else if (currentStreak >= 7) {
                 insights.add(new HabitInsightDto(
                         "streak-7-" + h.getId(),
                         "STREAK",
                         "Consistency Streak",
-                        h.getName() + " is on a solid " + habitDto.currentStreak() + "-day streak. Keep it going!",
+                        h.getName() + " is on a solid " + currentStreak + "-day streak. Keep it going!",
                         "POSITIVE",
                         h.getId()
                 ));

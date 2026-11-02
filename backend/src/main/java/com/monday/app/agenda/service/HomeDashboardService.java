@@ -397,24 +397,27 @@ public class HomeDashboardService {
     private ProjectOverviewDto calculateProjects(Instant startOfDay) {
         List<Project> allProjects = projectRepository.findAll();
         List<ProjectProgressSummaryDto> activeProjects = new ArrayList<>();
+        List<Project> filteredActive = allProjects.stream()
+                .filter(p -> !"COMPLETED".equalsIgnoreCase(p.getStatus()) && !"ARCHIVED".equalsIgnoreCase(p.getStatus()))
+                .toList();
 
-        for (Project p : allProjects) {
-            if ("COMPLETED".equalsIgnoreCase(p.getStatus()) || "ARCHIVED".equalsIgnoreCase(p.getStatus())) {
-                continue;
-            }
+        List<UUID> activeProjectIds = filteredActive.stream().map(Project::getId).toList();
+        Map<UUID, TaskRepository.TaskProgress> taskProgressMap = activeProjectIds.isEmpty()
+                ? Collections.emptyMap()
+                : taskRepository.getTaskProgressByProjectIds(activeProjectIds);
+        Map<UUID, Milestone> nextMilestoneMap = activeProjectIds.isEmpty()
+                ? Collections.emptyMap()
+                : milestoneRepository.findNextMilestonesByProjectIds(activeProjectIds);
 
-            List<Task> projectTasks = taskRepository.findByProjectId(p.getId());
-            int total = projectTasks.size();
-            int completed = (int) projectTasks.stream()
-                    .filter(t -> "COMPLETED".equalsIgnoreCase(t.getStatus()))
-                    .count();
-
+        for (Project p : filteredActive) {
+            TaskRepository.TaskProgress progress = taskProgressMap.getOrDefault(p.getId(), new TaskRepository.TaskProgress(0, 0));
+            int total = progress.total();
+            int completed = progress.completed();
             Integer progressPercent = total > 0 ? (completed * 100) / total : null;
 
-            // Find next milestone
-            Optional<Milestone> nextMilestone = milestoneRepository.findNextByProjectId(p.getId());
-            String nextMilestoneName = nextMilestone.map(Milestone::getName).orElse(null);
-            Instant nextMilestoneDueAt = nextMilestone.map(Milestone::getDueAt).orElse(null);
+            Milestone nextMilestone = nextMilestoneMap.get(p.getId());
+            String nextMilestoneName = nextMilestone != null ? nextMilestone.getName() : null;
+            Instant nextMilestoneDueAt = nextMilestone != null ? nextMilestone.getDueAt() : null;
 
             activeProjects.add(new ProjectProgressSummaryDto(
                     p.getId(),
@@ -653,28 +656,37 @@ public class HomeDashboardService {
         List<BudgetCategory> categories = categoryRepository.findAll();
         List<CategorySpendingSummaryDto> categoryDtos = new ArrayList<>();
 
+        Map<UUID, List<Budget>> budgetsByCategory = allBudgets.stream()
+                .filter(b -> b.getCategoryId() != null)
+                .collect(Collectors.groupingBy(Budget::getCategoryId));
+
+        String catSpendSql = """
+                SELECT category_id, COALESCE(SUM(amount), 0) as total_spent
+                FROM transactions
+                WHERE LOWER(transaction_type) IN ('expense', 'debit')
+                  AND transaction_at >= :start AND transaction_at <= :end
+                GROUP BY category_id
+                """;
+        MapSqlParameterSource catGroupParams = new MapSqlParameterSource()
+                .addValue("start", Timestamp.valueOf(monthStart.atStartOfDay()))
+                .addValue("end", Timestamp.valueOf(monthEnd.atTime(LocalTime.MAX)));
+
+        Map<UUID, BigDecimal> spentByCategory = new HashMap<>();
+        jdbc.query(catSpendSql, catGroupParams, rs -> {
+            String catIdStr = rs.getString("category_id");
+            if (catIdStr != null) {
+                spentByCategory.put(UUID.fromString(catIdStr), rs.getBigDecimal("total_spent"));
+            }
+        });
+
         for (BudgetCategory cat : categories) {
-            // Find budget for this category
-            List<Budget> catBudgets = budgetRepository.findByCategoryId(cat.getId());
+            List<Budget> catBudgets = budgetsByCategory.getOrDefault(cat.getId(), Collections.emptyList());
             BigDecimal catBudgeted = catBudgets.stream()
                     .map(Budget::getAmount)
                     .filter(Objects::nonNull)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-            // Find spent for this category
-            String catSpendSql = """
-                    SELECT COALESCE(SUM(amount), 0) FROM transactions
-                    WHERE category_id = :catId
-                      AND LOWER(transaction_type) IN ('expense', 'debit')
-                      AND transaction_at >= :start AND transaction_at <= :end
-                    """;
-            MapSqlParameterSource catParams = new MapSqlParameterSource()
-                    .addValue("catId", cat.getId())
-                    .addValue("start", Timestamp.valueOf(monthStart.atStartOfDay()))
-                    .addValue("end", Timestamp.valueOf(monthEnd.atTime(LocalTime.MAX)));
-            BigDecimal catSpent = jdbc.queryForObject(catSpendSql, catParams, BigDecimal.class);
-            if (catSpent == null) catSpent = BigDecimal.ZERO;
-
+            BigDecimal catSpent = spentByCategory.getOrDefault(cat.getId(), BigDecimal.ZERO);
             BigDecimal catRemaining = catBudgeted.subtract(catSpent).max(BigDecimal.ZERO);
             Double catConsumption = catBudgeted.compareTo(BigDecimal.ZERO) > 0
                     ? catSpent.divide(catBudgeted, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).doubleValue()
@@ -760,12 +772,30 @@ public class HomeDashboardService {
         List<VehicleAgendaSummaryDto.VehicleTaskSummaryDto> pendingTasks = new ArrayList<>();
         List<VehicleAgendaSummaryDto.VehicleObligationSummaryDto> upcomingObligations = new ArrayList<>();
 
+        List<UUID> vehicleIds = allVehicles.stream().map(Vehicle::getId).toList();
+
+        Map<UUID, List<VehicleMaintenanceSchedule>> schedulesByVehicle = (vehicleScheduleRepository != null && !vehicleIds.isEmpty())
+                ? vehicleScheduleRepository.findByVehicleIds(vehicleIds).stream().collect(Collectors.groupingBy(VehicleMaintenanceSchedule::getVehicleId))
+                : Collections.emptyMap();
+
+        Map<UUID, List<VehicleDocument>> docsByVehicle = (vehicleDocumentRepository != null && !vehicleIds.isEmpty())
+                ? vehicleDocumentRepository.findByVehicleIds(vehicleIds).stream().collect(Collectors.groupingBy(VehicleDocument::getVehicleId))
+                : Collections.emptyMap();
+
+        Map<UUID, List<VehicleTask>> tasksByVehicle = (vehicleTaskRepository != null && !vehicleIds.isEmpty())
+                ? vehicleTaskRepository.findByVehicleIds(vehicleIds).stream().collect(Collectors.groupingBy(VehicleTask::getVehicleId))
+                : Collections.emptyMap();
+
+        Map<UUID, List<VehicleObligation>> obligationsByVehicle = (vehicleObligationRepository != null && !vehicleIds.isEmpty())
+                ? vehicleObligationRepository.findByVehicleIds(vehicleIds).stream().collect(Collectors.groupingBy(VehicleObligation::getVehicleId))
+                : Collections.emptyMap();
+
         for (Vehicle v : allVehicles) {
             String vName = v.getName();
             int currentKm = v.getCurrentKm();
 
             if (vehicleScheduleRepository != null) {
-                List<VehicleMaintenanceSchedule> schedules = vehicleScheduleRepository.findByVehicleId(v.getId());
+                List<VehicleMaintenanceSchedule> schedules = schedulesByVehicle.getOrDefault(v.getId(), Collections.emptyList());
                 for (VehicleMaintenanceSchedule s : schedules) {
                     boolean overdue = false;
                     boolean dueSoon = false;
@@ -795,14 +825,14 @@ public class HomeDashboardService {
             }
 
             if (vehicleDocumentRepository != null) {
-                List<VehicleDocument> docs = vehicleDocumentRepository.findByVehicleId(v.getId());
+                List<VehicleDocument> docs = docsByVehicle.getOrDefault(v.getId(), Collections.emptyList());
                 for (VehicleDocument d : docs) {
                     if (d.getExpiryDate() != null) {
                         long days = ChronoUnit.DAYS.between(date, d.getExpiryDate());
                         if (days < 0) {
                             docsExpiredCount++;
                             expiringDocs.add(new VehicleAgendaSummaryDto.VehicleDocExpiryDto(
-                                    d.getId(), v.getId(), vName, d.getDocType(), d.getTitle(), d.getExpiryDate(), days, true
+                                     d.getId(), v.getId(), vName, d.getDocType(), d.getTitle(), d.getExpiryDate(), days, true
                             ));
                         } else if (days <= 30) {
                             docsExpiringCount++;
@@ -815,7 +845,7 @@ public class HomeDashboardService {
             }
 
             if (vehicleTaskRepository != null) {
-                List<VehicleTask> tasks = vehicleTaskRepository.findByVehicleId(v.getId());
+                List<VehicleTask> tasks = tasksByVehicle.getOrDefault(v.getId(), Collections.emptyList());
                 for (VehicleTask t : tasks) {
                     if (!Boolean.TRUE.equals(t.getCompleted())) {
                         pendingTasks.add(new VehicleAgendaSummaryDto.VehicleTaskSummaryDto(
@@ -826,7 +856,7 @@ public class HomeDashboardService {
             }
 
             if (vehicleObligationRepository != null) {
-                List<VehicleObligation> obligations = vehicleObligationRepository.findByVehicleId(v.getId());
+                List<VehicleObligation> obligations = obligationsByVehicle.getOrDefault(v.getId(), Collections.emptyList());
                 for (VehicleObligation o : obligations) {
                     if (o.getDueDate() != null && !o.getDueDate().isAfter(date.plusDays(30)) && !"PAID".equalsIgnoreCase(o.getStatus())) {
                         upcomingObligations.add(new VehicleAgendaSummaryDto.VehicleObligationSummaryDto(
@@ -1057,25 +1087,44 @@ public class HomeDashboardService {
                 OffsetDateTime cutoff = date.minusDays(7).atStartOfDay().atOffset(ZoneOffset.UTC);
                 List<Article> recent = articleRepository.findRecentArticles(cutoff);
                 int limit = Math.min(5, recent.size());
-                for (int i = 0; i < limit; i++) {
-                    Article a = recent.get(i);
-                    Optional<ArticleSummary> summaryOpt = summaryRepository != null
-                            ? summaryRepository.findFirstByArticleIdAndStatusOrderByCreatedAtDesc(a.getId(), "SUCCESS")
-                            : Optional.empty();
-                    String summarySnippet = summaryOpt.map(ArticleSummary::getSummary)
-                            .orElse(a.getDescription() != null ? a.getDescription() : "Curated article awaiting briefing generation.");
+                List<Article> topRecent = recent.subList(0, limit);
+                List<UUID> topArticleIds = topRecent.stream().map(Article::getId).toList();
+
+                Map<UUID, ArticleSummary> summariesMap = new HashMap<>();
+                if (summaryRepository != null && !topArticleIds.isEmpty()) {
+                    List<ArticleSummary> summaries = summaryRepository.findLatestSummariesByArticleIdsAndStatus(topArticleIds, "SUCCESS");
+                    for (ArticleSummary s : summaries) {
+                        if (s.getArticle() != null && s.getArticle().getId() != null) {
+                            summariesMap.put(s.getArticle().getId(), s);
+                        }
+                    }
+                }
+
+                Map<UUID, ArticleSource> sourcesMap = new HashMap<>();
+                if (articleSourceRepository != null && !topArticleIds.isEmpty()) {
+                    List<ArticleSource> sources = articleSourceRepository.findByIdArticleIdIn(topArticleIds);
+                    for (ArticleSource src : sources) {
+                        if (src.getArticle() != null && src.getArticle().getId() != null) {
+                            sourcesMap.putIfAbsent(src.getArticle().getId(), src);
+                        }
+                    }
+                }
+
+                for (Article a : topRecent) {
+                    ArticleSummary summary = summariesMap.get(a.getId());
+                    String summarySnippet = (summary != null && summary.getSummary() != null)
+                            ? summary.getSummary()
+                            : (a.getDescription() != null ? a.getDescription() : "Curated article awaiting briefing generation.");
                     if (summarySnippet.length() > 200) {
                         summarySnippet = summarySnippet.substring(0, 197) + "...";
                     }
 
                     String sourceName = "Curated Source";
-                    if (articleSourceRepository != null) {
-                        List<ArticleSource> sources = articleSourceRepository.findByIdArticleIdIn(List.of(a.getId()));
-                        if (!sources.isEmpty() && sources.get(0).getFeed() != null) {
-                            sourceName = sources.get(0).getFeed().getName();
-                        } else if (a.getAuthor() != null && !a.getAuthor().isBlank()) {
-                            sourceName = a.getAuthor();
-                        }
+                    ArticleSource src = sourcesMap.get(a.getId());
+                    if (src != null && src.getFeed() != null) {
+                        sourceName = src.getFeed().getName();
+                    } else if (a.getAuthor() != null && !a.getAuthor().isBlank()) {
+                        sourceName = a.getAuthor();
                     }
 
                     topArticles.add(new IntelligenceAgendaSummaryDto.IntelligenceArticleSummaryDto(

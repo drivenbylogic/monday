@@ -6,9 +6,11 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,6 +54,36 @@ public class VehicleFuelLogRepository {
     public List<VehicleFuelLog> findByVehicleIdAndDateRange(UUID vehicleId, Date startDate, Date endDate) {
         String sql = "SELECT * FROM vehicle_fuel_logs WHERE vehicle_id = :vehicleId AND log_date BETWEEN :start AND :end ORDER BY log_date ASC, odometer_km ASC";
         return jdbc.query(sql, new MapSqlParameterSource("vehicleId", vehicleId).addValue("start", startDate).addValue("end", endDate), VehicleFuelLogRowMapper.INSTANCE);
+    }
+
+    public BigDecimal sumFuelCostByVehicleIdAndDateRange(UUID vehicleId, LocalDate start, LocalDate end) {
+        String sql = """
+                SELECT COALESCE(SUM(total_cost), 0)
+                FROM vehicle_fuel_logs
+                WHERE vehicle_id = :vehicleId
+                  AND log_date >= :start AND log_date <= :end
+                """;
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("vehicleId", vehicleId)
+                .addValue("start", Date.valueOf(start))
+                .addValue("end", Date.valueOf(end));
+        BigDecimal sum = jdbc.queryForObject(sql, params, BigDecimal.class);
+        return sum != null ? sum : BigDecimal.ZERO;
+    }
+
+    public Double findLatestTripEfficiency(UUID vehicleId) {
+        String sql = """
+                SELECT trip_efficiency
+                FROM vehicle_fuel_logs
+                WHERE vehicle_id = :vehicleId
+                  AND trip_efficiency IS NOT NULL
+                  AND trip_efficiency > 0
+                ORDER BY log_date DESC, created_at DESC
+                LIMIT 1
+                """;
+        List<Double> results = jdbc.query(sql, new MapSqlParameterSource("vehicleId", vehicleId),
+                (rs, rowNum) -> rs.getDouble("trip_efficiency"));
+        return results.isEmpty() ? null : results.get(0);
     }
 
     public void deleteById(UUID id) {

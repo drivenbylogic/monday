@@ -39,6 +39,7 @@ public class MilestoneService {
         if (cacheInvalidationService != null) {
             cacheInvalidationService.evictAllAfterCommit(
                     CacheNames.PROJECT_METRICS,
+                    CacheNames.PROJECT_VELOCITY,
                     CacheNames.HOME_DASHBOARD
             );
         }

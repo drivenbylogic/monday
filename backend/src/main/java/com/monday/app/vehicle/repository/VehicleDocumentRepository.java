@@ -62,6 +62,12 @@ public class VehicleDocumentRepository {
                 new MapSqlParameterSource("vehicleId", vehicleId), VehicleDocumentRowMapper.INSTANCE);
     }
 
+    public List<VehicleDocument> findByVehicleIds(java.util.Collection<UUID> vehicleIds) {
+        if (vehicleIds == null || vehicleIds.isEmpty()) return java.util.Collections.emptyList();
+        return jdbc.query("SELECT * FROM vehicle_documents WHERE vehicle_id IN (:vehicleIds) ORDER BY expiry_date ASC NULLS LAST, created_at DESC",
+                new MapSqlParameterSource("vehicleIds", vehicleIds), VehicleDocumentRowMapper.INSTANCE);
+    }
+
     public void deleteById(UUID id) {
         jdbc.update("DELETE FROM vehicle_documents WHERE id = :id", new MapSqlParameterSource("id", id));
     }

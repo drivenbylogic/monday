@@ -49,9 +49,11 @@ public class ArticleFeedService {
         // Batch load summaries
         Map<UUID, ArticleSummary> summariesMap = new HashMap<>();
         if (!articleIds.isEmpty()) {
-            for (UUID id : articleIds) {
-                summaryRepository.findFirstByArticleIdAndStatusOrderByCreatedAtDesc(id, "SUCCESS")
-                        .ifPresent(s -> summariesMap.put(id, s));
+            List<ArticleSummary> latestSummaries = summaryRepository.findLatestSummariesByArticleIdsAndStatus(articleIds, "SUCCESS");
+            for (ArticleSummary s : latestSummaries) {
+                if (s.getArticle() != null && s.getArticle().getId() != null) {
+                    summariesMap.put(s.getArticle().getId(), s);
+                }
             }
         }
 

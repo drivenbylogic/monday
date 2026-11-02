@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -39,7 +40,7 @@ public class AdministrationAppointmentService {
             events = eventRepository.findAll();
         }
 
-        return events.stream()
+        List<Event> filtered = events.stream()
                 .filter(e -> {
                     if (query != null && !query.isBlank()) {
                         String q = query.toLowerCase().trim();
@@ -60,7 +61,13 @@ public class AdministrationAppointmentService {
                     }
                     return true;
                 })
-                .map(e -> toDto(e, now))
+                .toList();
+
+        List<UUID> eventIds = filtered.stream().map(Event::getId).toList();
+        Map<UUID, ChecklistDto> checklistMap = checklistService.getFirstChecklistByTargets("APPOINTMENT", eventIds);
+
+        return filtered.stream()
+                .map(e -> toDto(e, now, checklistMap.get(e.getId())))
                 .sorted(Comparator.comparing(AppointmentDto::startAt))
                 .toList();
     }
@@ -131,22 +138,31 @@ public class AdministrationAppointmentService {
     public List<AppointmentDto> getUpcomingAppointments(int limit) {
         Instant now = Instant.now();
         Instant endWindow = now.plus(30, ChronoUnit.DAYS);
-        return eventRepository.findUpcoming(now, endWindow).stream()
-                .map(e -> toDto(e, now))
-                .sorted(Comparator.comparing(AppointmentDto::startAt))
+        List<Event> upcoming = eventRepository.findUpcoming(now, endWindow).stream()
+                .sorted(Comparator.comparing(Event::getStartAt))
                 .limit(limit)
+                .toList();
+
+        List<UUID> eventIds = upcoming.stream().map(Event::getId).toList();
+        Map<UUID, ChecklistDto> checklistMap = checklistService.getFirstChecklistByTargets("APPOINTMENT", eventIds);
+
+        return upcoming.stream()
+                .map(e -> toDto(e, now, checklistMap.get(e.getId())))
                 .toList();
     }
 
     public AppointmentDto toDto(Event e, Instant now) {
-        long daysRemaining = e.getStartAt() != null ? ChronoUnit.DAYS.between(now, e.getStartAt()) : 0;
-        boolean isUpcoming = e.getStartAt() != null && e.getStartAt().isAfter(now) && !"CANCELLED".equals(e.getStatus()) && !"COMPLETED".equals(e.getStatus());
-
         ChecklistDto linkedChecklist = null;
         List<ChecklistDto> checklists = checklistService.getChecklistsForRecord("APPOINTMENT", e.getId());
         if (!checklists.isEmpty()) {
             linkedChecklist = checklists.get(0);
         }
+        return toDto(e, now, linkedChecklist);
+    }
+
+    public AppointmentDto toDto(Event e, Instant now, ChecklistDto linkedChecklist) {
+        long daysRemaining = e.getStartAt() != null ? ChronoUnit.DAYS.between(now, e.getStartAt()) : 0;
+        boolean isUpcoming = e.getStartAt() != null && e.getStartAt().isAfter(now) && !"CANCELLED".equals(e.getStatus()) && !"COMPLETED".equals(e.getStatus());
 
         return new AppointmentDto(
                 e.getId(),

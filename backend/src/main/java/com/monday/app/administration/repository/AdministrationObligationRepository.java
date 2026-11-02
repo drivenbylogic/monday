@@ -143,6 +143,57 @@ public class AdministrationObligationRepository {
         return jdbc.query(sql, params, ObligationRowMapper.INSTANCE);
     }
 
+    public record ObligationMetrics(
+            int totalActive,
+            int dueSoon,
+            int overdue,
+            BigDecimal monthlySubscriptionCommitment
+    ) {}
+
+    public ObligationMetrics getObligationMetrics(LocalDate today, int daysThreshold) {
+        String sql = """
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE status NOT IN ('CANCELLED', 'EXPIRED')
+                    ) AS total_active,
+                    COUNT(*) FILTER (
+                        WHERE status NOT IN ('CANCELLED', 'EXPIRED')
+                          AND next_due_date >= :today
+                          AND next_due_date <= :maxDate
+                    ) AS due_soon,
+                    COUNT(*) FILTER (
+                        WHERE status NOT IN ('CANCELLED', 'EXPIRED', 'PAID')
+                          AND next_due_date < :today
+                    ) AS overdue,
+                    COALESCE(SUM(
+                        CASE 
+                            WHEN status NOT IN ('CANCELLED', 'EXPIRED') AND expected_amount IS NOT NULL THEN
+                                CASE 
+                                    WHEN billing_frequency = 'WEEKLY' THEN expected_amount * 4.33
+                                    WHEN billing_frequency = 'MONTHLY' THEN expected_amount
+                                    WHEN billing_frequency = 'QUARTERLY' THEN expected_amount / 3.0
+                                    WHEN billing_frequency = 'HALF_YEARLY' THEN expected_amount / 6.0
+                                    WHEN billing_frequency = 'YEARLY' THEN expected_amount / 12.0
+                                    ELSE expected_amount
+                                END
+                            ELSE 0
+                        END
+                    ), 0) AS monthly_subscriptions
+                FROM administration_obligations
+                WHERE archived_at IS NULL
+                """;
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("today", today)
+                .addValue("maxDate", today.plusDays(daysThreshold));
+
+        return jdbc.queryForObject(sql, params, (rs, rowNum) -> new ObligationMetrics(
+                rs.getInt("total_active"),
+                rs.getInt("due_soon"),
+                rs.getInt("overdue"),
+                rs.getBigDecimal("monthly_subscriptions")
+        ));
+    }
+
     public int countActive() {
         String sql = "SELECT COUNT(*) FROM administration_obligations WHERE archived_at IS NULL AND status NOT IN ('CANCELLED', 'EXPIRED')";
         Integer count = jdbc.queryForObject(sql, new MapSqlParameterSource(), Integer.class);

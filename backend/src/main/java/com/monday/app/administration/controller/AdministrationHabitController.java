@@ -139,14 +139,16 @@ public class AdministrationHabitController {
     public ResponseEntity<TodayHabitViewDto> getToday(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
     ) {
-        return ResponseEntity.ok(executionService.getTodayView(date));
+        LocalDate targetDate = date != null ? date : LocalDate.now();
+        return ResponseEntity.ok(executionService.getTodayView(targetDate));
     }
 
     @GetMapping("/week")
     public ResponseEntity<WeekHabitViewDto> getWeek(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
     ) {
-        return ResponseEntity.ok(executionService.getWeekView(date));
+        LocalDate targetDate = date != null ? date : LocalDate.now();
+        return ResponseEntity.ok(executionService.getWeekView(targetDate));
     }
 
     @PostMapping("/occurrences/{id}/complete")

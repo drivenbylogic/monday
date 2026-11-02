@@ -113,6 +113,29 @@ public class AdministrationGadgetRepository {
         jdbc.update("DELETE FROM administration_gadgets WHERE id = :id", new MapSqlParameterSource("id", id));
     }
 
+    public record GadgetMetrics(int totalGadgets, int warrantiesExpiringSoon) {}
+
+    public GadgetMetrics getGadgetMetrics(LocalDate today, int daysThreshold) {
+        String sql = """
+                SELECT
+                    COUNT(*) AS total_gadgets,
+                    COUNT(*) FILTER (
+                        WHERE warranty_end_date IS NOT NULL
+                          AND warranty_end_date >= :today
+                          AND warranty_end_date <= :maxDate
+                    ) AS warranties_expiring_soon
+                FROM administration_gadgets
+                WHERE archived_at IS NULL
+                """;
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("today", today)
+                .addValue("maxDate", today.plusDays(daysThreshold));
+        return jdbc.queryForObject(sql, params, (rs, rowNum) -> new GadgetMetrics(
+                rs.getInt("total_gadgets"),
+                rs.getInt("warranties_expiring_soon")
+        ));
+    }
+
     public int countAll() {
         Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM administration_gadgets WHERE archived_at IS NULL",
                 new MapSqlParameterSource(), Integer.class);

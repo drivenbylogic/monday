@@ -1,9 +1,11 @@
 package com.monday.app.intelligence.entity;
 
+import jakarta.persistence.Basic;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import jakarta.persistence.Column;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -26,6 +28,7 @@ public class Article {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Basic(fetch = FetchType.LAZY)
     @Column(name = "content_text", columnDefinition = "TEXT")
     private String contentText;
 

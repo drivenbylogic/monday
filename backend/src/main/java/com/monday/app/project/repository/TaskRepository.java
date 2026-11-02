@@ -191,6 +191,37 @@ public class TaskRepository {
                 .stream().findFirst();
     }
 
+    public record TaskProgress(int total, int completed) {}
+
+    public java.util.Map<UUID, TaskProgress> getTaskProgressByProjectIds(java.util.Collection<UUID> projectIds) {
+        if (projectIds == null || projectIds.isEmpty()) return java.util.Collections.emptyMap();
+        String sql = """
+                SELECT project_id,
+                       COUNT(*) AS total_tasks,
+                       COUNT(*) FILTER (WHERE UPPER(status) = 'COMPLETED') AS completed_tasks
+                FROM tasks
+                WHERE project_id IN (:projectIds)
+                GROUP BY project_id
+                """;
+        java.util.Map<UUID, TaskProgress> map = new java.util.HashMap<>();
+        jdbc.query(sql, new MapSqlParameterSource("projectIds", projectIds), rs -> {
+            String pidStr = rs.getString("project_id");
+            if (pidStr != null) {
+                UUID pid = UUID.fromString(pidStr);
+                int total = rs.getInt("total_tasks");
+                int completed = rs.getInt("completed_tasks");
+                map.put(pid, new TaskProgress(total, completed));
+            }
+        });
+        return map;
+    }
+
+    public java.util.List<Task> findByProjectIds(java.util.Collection<UUID> projectIds) {
+        if (projectIds == null || projectIds.isEmpty()) return java.util.Collections.emptyList();
+        String sql = "SELECT * FROM tasks WHERE project_id IN (:projectIds) ORDER BY due_at ASC NULLS LAST";
+        return jdbc.query(sql, new MapSqlParameterSource("projectIds", projectIds), TaskRowMapper.INSTANCE);
+    }
+
     private MapSqlParameterSource toParams(UUID id, Task t) {
         return new MapSqlParameterSource()
                 .addValue("id", id)

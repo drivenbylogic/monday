@@ -10,7 +10,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.ZoneId;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -120,32 +125,73 @@ public class EventRepository {
 
     // --- DB queries for API Endpoints ---
     public java.util.Map<String, Object> getPulse(String month, String tz) {
-        String todayCountSql = "SELECT count(*) FROM events WHERE DATE(start_at) = CURRENT_DATE";
-        String monthCountSql = "SELECT count(*) FROM events WHERE to_char(start_at, 'YYYY-MM') = :month";
-        String prepCountSql = "SELECT count(*) FROM events WHERE requires_prep = true AND start_at >= CURRENT_DATE";
+        ZoneId zoneId;
+        try {
+            zoneId = (tz != null && !tz.isBlank()) ? ZoneId.of(tz) : ZoneId.systemDefault();
+        } catch (Exception e) {
+            zoneId = ZoneId.systemDefault();
+        }
 
-        int eventsToday = jdbc.queryForObject(todayCountSql, new MapSqlParameterSource(), Integer.class);
-        int upcomingThisMonth = jdbc.queryForObject(monthCountSql, new MapSqlParameterSource("month", month), Integer.class);
-        int requirePrepCount = jdbc.queryForObject(prepCountSql, new MapSqlParameterSource(), Integer.class);
+        YearMonth ym;
+        try {
+            ym = (month != null && !month.isBlank()) ? YearMonth.parse(month) : YearMonth.now(zoneId);
+        } catch (Exception e) {
+            ym = YearMonth.now(zoneId);
+        }
 
-        return java.util.Map.of(
-                "eventsToday", eventsToday,
-                "upcomingThisMonth", upcomingThisMonth,
-                "requirePrepCount", requirePrepCount,
-                "activeCycle", month
-        );
+        LocalDate today = LocalDate.now(zoneId);
+        Instant startOfToday = today.atStartOfDay(zoneId).toInstant();
+        Instant startOfTomorrow = today.plusDays(1).atStartOfDay(zoneId).toInstant();
+        Instant startOfMonth = ym.atDay(1).atStartOfDay(zoneId).toInstant();
+        Instant startOfNextMonth = ym.plusMonths(1).atDay(1).atStartOfDay(zoneId).toInstant();
+        final String activeCycle = ym.toString();
+
+        String sql = """
+                SELECT
+                  COUNT(*) FILTER (WHERE start_at >= :startOfToday AND start_at < :startOfTomorrow) AS events_today,
+                  COUNT(*) FILTER (WHERE start_at >= :startOfMonth AND start_at < :startOfNextMonth) AS upcoming_this_month,
+                  COUNT(*) FILTER (WHERE requires_prep = true AND start_at >= :startOfToday) AS require_prep_count
+                FROM events
+                """;
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("startOfToday", Timestamp.from(startOfToday))
+                .addValue("startOfTomorrow", Timestamp.from(startOfTomorrow))
+                .addValue("startOfMonth", Timestamp.from(startOfMonth))
+                .addValue("startOfNextMonth", Timestamp.from(startOfNextMonth));
+
+        return jdbc.queryForObject(sql, params, (rs, rowNum) -> java.util.Map.of(
+                "eventsToday", rs.getInt("events_today"),
+                "upcomingThisMonth", rs.getInt("upcoming_this_month"),
+                "requirePrepCount", rs.getInt("require_prep_count"),
+                "activeCycle", activeCycle
+        ));
     }
 
     public List<java.util.Map<String, Object>> getDayEvents(String date) {
+        LocalDate localDate;
+        try {
+            localDate = LocalDate.parse(date);
+        } catch (Exception e) {
+            localDate = LocalDate.now();
+        }
+
+        Instant start = localDate.atStartOfDay(ZoneId.systemDefault()).toInstant();
+        Instant end = localDate.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant();
+
         String sql = """
             SELECT id, title, to_char(start_at, 'HH24:MI') as time, 
                    '60m' as duration, event_type as category, location, 'Zoom' as platform, 
                    1 as attendeesCount, 'N/A' as attendeesNames
             FROM events 
-            WHERE DATE(start_at) = :date::date
+            WHERE start_at >= :start AND start_at < :end
             ORDER BY start_at
         """;
-        return jdbc.queryForList(sql, new MapSqlParameterSource("date", date));
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("start", Timestamp.from(start))
+                .addValue("end", Timestamp.from(end));
+
+        return jdbc.queryForList(sql, params);
     }
 
     public List<java.util.Map<String, Object>> getPrepQueue(String status, int limit) {

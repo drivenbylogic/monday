@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -75,6 +76,7 @@ public class ProjectService {
         if (cacheInvalidationService != null) {
             cacheInvalidationService.evictAllAfterCommit(
                     CacheNames.PROJECT_METRICS,
+                    CacheNames.PROJECT_VELOCITY,
                     CacheNames.HOME_DASHBOARD
             );
         }
@@ -173,8 +175,9 @@ public class ProjectService {
 
     public List<ProjectBasicResponse> getBasicProjects() {
         List<Project> projects = projectRepository.findAll();
-        List<Milestone> allMilestones = milestoneRepository.findAll();
-        List<Task> allTasks = taskRepository.findAll();
+        List<UUID> projectIds = projects.stream().map(Project::getId).toList();
+        List<Milestone> allMilestones = projectIds.isEmpty() ? Collections.emptyList() : milestoneRepository.findByProjectIds(projectIds);
+        List<Task> allTasks = projectIds.isEmpty() ? Collections.emptyList() : taskRepository.findByProjectIds(projectIds);
 
         Map<UUID, List<Milestone>> milestonesByProject = allMilestones.stream()
                 .filter(m -> m.getProjectId() != null)
@@ -331,25 +334,101 @@ public class ProjectService {
         return resp;
     }
 
-    @Cacheable(value = CacheNames.PROJECT_METRICS, keyGenerator = "userAwareKeyGenerator", sync = true)
+    @Cacheable(value = CacheNames.PROJECT_VELOCITY, keyGenerator = "userAwareKeyGenerator", sync = true)
     public VelocityMetricsResponse getVelocityMetrics() {
         Instant now = Instant.now();
         Instant oneWeekAgo = now.minus(7, ChronoUnit.DAYS);
         Instant twoWeeksAgo = now.minus(14, ChronoUnit.DAYS);
         
-        List<Map<String, Object>> thisWeekData = taskRepository.getDailyCompletionsBetween(oneWeekAgo, now);
-        List<Map<String, Object>> lastWeekData = taskRepository.getDailyCompletionsBetween(twoWeeksAgo, oneWeekAgo);
+        List<Map<String, Object>> all14DaysData = taskRepository.getDailyCompletionsBetween(twoWeeksAgo, now);
+        LocalDate boundaryDate = oneWeekAgo.atZone(ZoneId.of("UTC")).toLocalDate();
+
+        List<Map<String, Object>> thisWeekData = new ArrayList<>();
+        List<Map<String, Object>> lastWeekData = new ArrayList<>();
+        for (Map<String, Object> row : all14DaysData) {
+            Object dateObj = row.get("completed_date");
+            if (dateObj == null) dateObj = row.get("COMPLETED_DATE");
+            LocalDate ld = null;
+            if (dateObj instanceof java.sql.Date d) ld = d.toLocalDate();
+            else if (dateObj instanceof LocalDate d) ld = d;
+            else if (dateObj != null) {
+                try {
+                    ld = LocalDate.parse(dateObj.toString());
+                } catch (Exception ignored) {}
+            }
+
+            if (ld != null && !ld.isBefore(boundaryDate)) {
+                thisWeekData.add(row);
+            } else {
+                lastWeekData.add(row);
+            }
+        }
         
         VelocityMetricsResponse resp = new VelocityMetricsResponse();
         resp.setCurrentWeekDailyCompletions(formatDailyCompletions(thisWeekData));
         resp.setPastWeekDailyCompletions(formatDailyCompletions(lastWeekData));
+
+        int currentClosed = sumTaskCounts(thisWeekData);
+        int pastClosed = sumTaskCounts(lastWeekData);
+        resp.setCurrentWeekTasksClosed(currentClosed);
+        resp.setPreviousWeekTasksClosed(pastClosed);
+
+        double pctChange = pastClosed > 0
+                ? Math.round(((double) (currentClosed - pastClosed) / pastClosed * 100.0) * 10.0) / 10.0
+                : (currentClosed > 0 ? 100.0 : 0.0);
+        resp.setVelocityPercentageChange(pctChange);
+
+        double health = Math.min(100.0, Math.max(0.0, Math.round(((double) currentClosed / (pastClosed > 0 ? pastClosed : 1)) * 75.0)));
+        resp.setVelocityHealthScore(health);
+
         return resp;
+    }
+
+    private int sumTaskCounts(List<Map<String, Object>> data) {
+        if (data == null) return 0;
+        int total = 0;
+        for (Map<String, Object> row : data) {
+            Object countVal = row.get("task_count");
+            if (countVal == null) countVal = row.get("TASK_COUNT");
+            if (countVal instanceof Number num) {
+                total += num.intValue();
+            }
+        }
+        return total;
     }
 
     private Map<String, Integer> formatDailyCompletions(List<Map<String, Object>> data) {
         Map<String, Integer> map = new HashMap<>();
+        String[] days = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"};
+        for (String d : days) {
+            map.put(d, 0);
+        }
+        if (data == null) {
+            return map;
+        }
         for (Map<String, Object> row : data) {
-            map.put(String.valueOf(row.get("completed_date")), ((Number) row.get("task_count")).intValue());
+            Object dateVal = row.get("completed_date");
+            if (dateVal == null) dateVal = row.get("COMPLETED_DATE");
+            Object countVal = row.get("task_count");
+            if (countVal == null) countVal = row.get("TASK_COUNT");
+            if (dateVal != null && countVal instanceof Number num) {
+                int count = num.intValue();
+                String dateStr = String.valueOf(dateVal);
+                map.put(dateStr, count);
+                try {
+                    LocalDate ld;
+                    if (dateVal instanceof java.sql.Date sqlDate) {
+                        ld = sqlDate.toLocalDate();
+                    } else if (dateVal instanceof LocalDate localDate) {
+                        ld = localDate;
+                    } else {
+                        ld = LocalDate.parse(dateStr);
+                    }
+                    String dayName = ld.getDayOfWeek().name().toLowerCase();
+                    map.merge(dayName, count, Integer::sum);
+                } catch (Exception ignored) {
+                }
+            }
         }
         return map;
     }

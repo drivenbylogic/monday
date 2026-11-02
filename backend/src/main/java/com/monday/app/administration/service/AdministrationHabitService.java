@@ -6,13 +6,18 @@ import com.monday.app.administration.dto.*;
 import com.monday.app.administration.entity.*;
 import com.monday.app.administration.repository.*;
 import com.monday.app.security.SecurityUtils;
+import com.monday.app.shared.cache.CacheInvalidationService;
+import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.shared.exception.ResourceNotFoundException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class AdministrationHabitService {
@@ -24,6 +29,7 @@ public class AdministrationHabitService {
     private final AdministrationHabitPausePeriodRepository pausePeriodRepository;
     private final AdministrationHabitReminderRepository reminderRepository;
     private final ObjectMapper objectMapper;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public AdministrationHabitService(
             AdministrationHabitRepository habitRepository,
@@ -34,6 +40,21 @@ public class AdministrationHabitService {
             AdministrationHabitReminderRepository reminderRepository,
             ObjectMapper objectMapper
     ) {
+        this(habitRepository, groupRepository, scheduleVersionRepository, occurrenceRepository,
+                pausePeriodRepository, reminderRepository, objectMapper, null);
+    }
+
+    @Autowired
+    public AdministrationHabitService(
+            AdministrationHabitRepository habitRepository,
+            AdministrationHabitGroupRepository groupRepository,
+            AdministrationHabitScheduleVersionRepository scheduleVersionRepository,
+            AdministrationHabitOccurrenceRepository occurrenceRepository,
+            AdministrationHabitPausePeriodRepository pausePeriodRepository,
+            AdministrationHabitReminderRepository reminderRepository,
+            ObjectMapper objectMapper,
+            @Nullable CacheInvalidationService cacheInvalidationService
+    ) {
         this.habitRepository = habitRepository;
         this.groupRepository = groupRepository;
         this.scheduleVersionRepository = scheduleVersionRepository;
@@ -41,19 +62,103 @@ public class AdministrationHabitService {
         this.pausePeriodRepository = pausePeriodRepository;
         this.reminderRepository = reminderRepository;
         this.objectMapper = objectMapper;
+        this.cacheInvalidationService = cacheInvalidationService;
+    }
+
+    private void evictHabitCaches() {
+        if (cacheInvalidationService != null) {
+            cacheInvalidationService.evictAllAfterCommit(
+                    CacheNames.HABIT_ANALYTICS,
+                    CacheNames.HABIT_REPORTS,
+                    CacheNames.HABIT_TODAY,
+                    CacheNames.HABIT_WEEK,
+                    CacheNames.HOME_DASHBOARD
+            );
+        }
     }
 
     @Transactional(readOnly = true)
     public List<HabitDto> getHabits(String status, String category, UUID groupId, String search) {
         UUID userId = SecurityUtils.getCurrentUserId().orElse(null);
         List<AdministrationHabit> habits = habitRepository.search(userId, status, category, groupId, search);
+        if (habits.isEmpty()) return Collections.emptyList();
 
-        // Preload groups for name mapping
         Map<UUID, String> groupNames = loadGroupNames(userId);
+        List<UUID> habitIds = habits.stream().map(AdministrationHabit::getId).toList();
 
-        return habits.stream()
-                .map(h -> toDto(h, groupNames.get(h.getGroupId())))
-                .toList();
+        // 1. Batch preload latest schedule versions
+        List<AdministrationHabitScheduleVersion> versions = scheduleVersionRepository.findByHabitIds(habitIds);
+        Map<UUID, AdministrationHabitScheduleVersion> latestVersions = versions.stream()
+                .collect(Collectors.toMap(AdministrationHabitScheduleVersion::getHabitId, v -> v, (v1, v2) -> v1));
+
+        // 2. Batch preload reminders
+        List<AdministrationHabitReminder> reminders = reminderRepository.findByHabitIds(habitIds);
+        Map<UUID, List<HabitReminderDto>> remindersByHabit = reminders.stream()
+                .collect(Collectors.groupingBy(
+                        AdministrationHabitReminder::getHabitId,
+                        Collectors.mapping(r -> new HabitReminderDto(r.getId(), r.getHabitId(), r.getReminderTime(), r.isEnabled()), Collectors.toList())
+                ));
+
+        // 3. Batch preload occurrences for past 365 days
+        LocalDate today = LocalDate.now();
+        LocalDate past365 = today.minusDays(365);
+        List<AdministrationHabitOccurrence> allOccurrences = occurrenceRepository.findByHabitIdsAndDateRange(habitIds, past365, today);
+        Map<UUID, List<AdministrationHabitOccurrence>> occurrencesByHabit = allOccurrences.stream()
+                .collect(Collectors.groupingBy(AdministrationHabitOccurrence::getHabitId));
+
+        LocalDate thirtyDaysAgo = today.minusDays(30);
+
+        return habits.stream().map(h -> {
+            AdministrationHabitScheduleVersion version = latestVersions.get(h.getId());
+            String scheduleConfig = version != null ? version.getScheduleConfig() : null;
+            List<HabitReminderDto> habitReminders = remindersByHabit.getOrDefault(h.getId(), Collections.emptyList());
+
+            List<AdministrationHabitOccurrence> habitOccurrences = occurrencesByHabit.getOrDefault(h.getId(), Collections.emptyList());
+
+            // 30-day completion rate
+            int eligible = 0;
+            int completed = 0;
+            for (AdministrationHabitOccurrence o : habitOccurrences) {
+                if (!o.getScheduledDate().isBefore(thirtyDaysAgo) && !"SKIPPED".equals(o.getStatus())) {
+                    eligible++;
+                    if ("COMPLETED".equals(o.getStatus())) {
+                        completed++;
+                    }
+                }
+            }
+            double rate30Days = eligible > 0 ? (double) completed / eligible * 100.0 : 0.0;
+
+            // Streaks computed in memory
+            int currentStreak = computeCurrentStreakFromOccurrences(habitOccurrences, today);
+            int longestStreak = Math.max(currentStreak, computeLongestStreakFromOccurrences(habitOccurrences));
+
+            return new HabitDto(
+                    h.getId(),
+                    h.getUserId(),
+                    h.getGroupId(),
+                    groupNames.get(h.getGroupId()),
+                    h.getName(),
+                    h.getDescription(),
+                    h.getCategory(),
+                    h.getFrequencyType(),
+                    scheduleConfig,
+                    h.getTargetValue(),
+                    h.getMinimumTargetValue(),
+                    h.getTargetUnit(),
+                    h.getPriority(),
+                    h.getStartDate(),
+                    h.getEndDate(),
+                    h.getStatus(),
+                    h.getDisplayOrder(),
+                    h.getEstimatedDuration(),
+                    habitReminders,
+                    currentStreak,
+                    longestStreak,
+                    Math.round(rate30Days * 10.0) / 10.0,
+                    h.getCreatedAt(),
+                    h.getUpdatedAt()
+            );
+        }).toList();
     }
 
     @Transactional(readOnly = true)
@@ -123,6 +228,7 @@ public class AdministrationHabitService {
                     .orElse(null);
         }
 
+        evictHabitCaches();
         return toDto(saved, groupName);
     }
 
@@ -206,6 +312,7 @@ public class AdministrationHabitService {
                     .orElse(null);
         }
 
+        evictHabitCaches();
         return toDto(updated, groupName);
     }
 
@@ -227,6 +334,7 @@ public class AdministrationHabitService {
         pause.setEndDate(endDate);
         pause.setReason(reason);
         pausePeriodRepository.save(pause);
+        evictHabitCaches();
     }
 
     @Transactional
@@ -238,6 +346,7 @@ public class AdministrationHabitService {
         LocalDate today = LocalDate.now();
         habitRepository.updateStatus(id, "ACTIVE");
         pausePeriodRepository.closeOpenPauses(id, today.minusDays(1));
+        evictHabitCaches();
     }
 
     @Transactional
@@ -246,6 +355,7 @@ public class AdministrationHabitService {
         habitRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Habit not found with id: " + id));
         habitRepository.updateStatus(id, "ARCHIVED");
+        evictHabitCaches();
     }
 
     @Transactional
@@ -254,6 +364,7 @@ public class AdministrationHabitService {
         habitRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Habit not found with id: " + id));
         habitRepository.updateStatus(id, "ACTIVE");
+        evictHabitCaches();
     }
 
     @Transactional
@@ -262,6 +373,7 @@ public class AdministrationHabitService {
         habitRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Habit not found with id: " + id));
         habitRepository.deleteById(id);
+        evictHabitCaches();
     }
 
     @Transactional(readOnly = true)
@@ -287,6 +399,7 @@ public class AdministrationHabitService {
                 reminderRepository.save(rem);
             }
         }
+        evictHabitCaches();
         return getReminders(habitId);
     }
 
@@ -347,11 +460,14 @@ public class AdministrationHabitService {
         );
     }
 
-    private int calculateStreak(UUID habitId) {
-        LocalDate today = LocalDate.now();
-        List<AdministrationHabitOccurrence> recent = occurrenceRepository.findRecentByHabitId(habitId, 60);
+    public static int computeCurrentStreakFromOccurrences(List<AdministrationHabitOccurrence> occurrences, LocalDate today) {
+        if (occurrences == null || occurrences.isEmpty()) return 0;
+        // Occurrences can be in ASC order or arbitrary. Sort by scheduledDate DESC.
+        List<AdministrationHabitOccurrence> sorted = occurrences.stream()
+                .sorted(Comparator.comparing(AdministrationHabitOccurrence::getScheduledDate).reversed())
+                .toList();
         int streak = 0;
-        for (AdministrationHabitOccurrence o : recent) {
+        for (AdministrationHabitOccurrence o : sorted) {
             if ("COMPLETED".equals(o.getStatus())) {
                 streak++;
             } else if ("SKIPPED".equals(o.getStatus())) {
@@ -365,11 +481,15 @@ public class AdministrationHabitService {
         return streak;
     }
 
-    private int calculateLongestStreak(UUID habitId) {
-        List<AdministrationHabitOccurrence> all = occurrenceRepository.findRecentByHabitId(habitId, 365);
+    public static int computeLongestStreakFromOccurrences(List<AdministrationHabitOccurrence> occurrences) {
+        if (occurrences == null || occurrences.isEmpty()) return 0;
+        // Sort by scheduledDate ASC for chronological streak calculation
+        List<AdministrationHabitOccurrence> sorted = occurrences.stream()
+                .sorted(Comparator.comparing(AdministrationHabitOccurrence::getScheduledDate))
+                .toList();
         int maxStreak = 0;
         int current = 0;
-        for (AdministrationHabitOccurrence o : all) {
+        for (AdministrationHabitOccurrence o : sorted) {
             if ("COMPLETED".equals(o.getStatus())) {
                 current++;
                 if (current > maxStreak) maxStreak = current;
@@ -380,6 +500,17 @@ public class AdministrationHabitService {
             }
         }
         return maxStreak;
+    }
+
+    private int calculateStreak(UUID habitId) {
+        LocalDate today = LocalDate.now();
+        List<AdministrationHabitOccurrence> recent = occurrenceRepository.findRecentByHabitId(habitId, 60);
+        return computeCurrentStreakFromOccurrences(recent, today);
+    }
+
+    private int calculateLongestStreak(UUID habitId) {
+        List<AdministrationHabitOccurrence> all = occurrenceRepository.findRecentByHabitId(habitId, 365);
+        return computeLongestStreakFromOccurrences(all);
     }
 
     private Map<UUID, String> loadGroupNames(UUID userId) {

@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,6 +40,12 @@ public class AdministrationHabitReminderRepository {
     public List<AdministrationHabitReminder> findByHabitId(UUID habitId) {
         String sql = "SELECT * FROM habit_reminders WHERE habit_id = :habitId ORDER BY reminder_time ASC";
         return jdbc.query(sql, new MapSqlParameterSource("habitId", habitId), ReminderRowMapper.INSTANCE);
+    }
+
+    public List<AdministrationHabitReminder> findByHabitIds(List<UUID> habitIds) {
+        if (habitIds == null || habitIds.isEmpty()) return Collections.emptyList();
+        String sql = "SELECT * FROM habit_reminders WHERE habit_id IN (:habitIds) ORDER BY reminder_time ASC";
+        return jdbc.query(sql, new MapSqlParameterSource("habitIds", habitIds), ReminderRowMapper.INSTANCE);
     }
 
     public void deleteByHabitId(UUID habitId) {

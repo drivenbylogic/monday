@@ -53,6 +53,12 @@ public class VehicleTaskRepository {
                 new MapSqlParameterSource("vehicleId", vehicleId), VehicleTaskRowMapper.INSTANCE);
     }
 
+    public List<VehicleTask> findByVehicleIds(java.util.Collection<UUID> vehicleIds) {
+        if (vehicleIds == null || vehicleIds.isEmpty()) return java.util.Collections.emptyList();
+        return jdbc.query("SELECT * FROM vehicle_tasks WHERE vehicle_id IN (:vehicleIds) ORDER BY completed ASC, created_at DESC",
+                new MapSqlParameterSource("vehicleIds", vehicleIds), VehicleTaskRowMapper.INSTANCE);
+    }
+
     public void deleteById(UUID id) {
         jdbc.update("DELETE FROM vehicle_tasks WHERE id = :id", new MapSqlParameterSource("id", id));
     }

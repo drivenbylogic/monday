@@ -52,6 +52,12 @@ public class VehicleMaintenanceScheduleRepository {
                 new MapSqlParameterSource("vehicleId", vehicleId), VehicleMaintenanceScheduleRowMapper.INSTANCE);
     }
 
+    public List<VehicleMaintenanceSchedule> findByVehicleIds(java.util.Collection<UUID> vehicleIds) {
+        if (vehicleIds == null || vehicleIds.isEmpty()) return java.util.Collections.emptyList();
+        return jdbc.query("SELECT * FROM vehicle_maintenance_schedules WHERE vehicle_id IN (:vehicleIds) ORDER BY next_due_at, next_due_km",
+                new MapSqlParameterSource("vehicleIds", vehicleIds), VehicleMaintenanceScheduleRowMapper.INSTANCE);
+    }
+
     public void deleteById(UUID id) {
         jdbc.update("DELETE FROM vehicle_maintenance_schedules WHERE id = :id", new MapSqlParameterSource("id", id));
     }

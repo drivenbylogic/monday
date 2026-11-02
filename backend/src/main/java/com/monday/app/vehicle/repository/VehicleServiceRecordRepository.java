@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,6 +61,21 @@ public class VehicleServiceRecordRepository {
     public List<VehicleServiceRecord> findByVehicleId(UUID vehicleId) {
         return jdbc.query("SELECT * FROM vehicle_service_records WHERE vehicle_id = :vehicleId ORDER BY service_date DESC, created_at DESC",
                 new MapSqlParameterSource("vehicleId", vehicleId), VehicleServiceRecordRowMapper.INSTANCE);
+    }
+
+    public BigDecimal sumServiceCostByVehicleIdAndDateRange(UUID vehicleId, LocalDate start, LocalDate end) {
+        String sql = """
+                SELECT COALESCE(SUM(cost), 0)
+                FROM vehicle_service_records
+                WHERE vehicle_id = :vehicleId
+                  AND service_date >= :start AND service_date <= :end
+                """;
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("vehicleId", vehicleId)
+                .addValue("start", Date.valueOf(start))
+                .addValue("end", Date.valueOf(end));
+        BigDecimal sum = jdbc.queryForObject(sql, params, BigDecimal.class);
+        return sum != null ? sum : BigDecimal.ZERO;
     }
 
     public void deleteById(UUID id) {

@@ -12,6 +12,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -69,6 +70,12 @@ public class AdministrationHabitScheduleVersionRepository {
     public List<AdministrationHabitScheduleVersion> findByHabitId(UUID habitId) {
         String sql = "SELECT * FROM habit_schedule_versions WHERE habit_id = :habitId ORDER BY effective_from ASC";
         return jdbc.query(sql, new MapSqlParameterSource("habitId", habitId), ScheduleVersionRowMapper.INSTANCE);
+    }
+
+    public List<AdministrationHabitScheduleVersion> findByHabitIds(List<UUID> habitIds) {
+        if (habitIds == null || habitIds.isEmpty()) return Collections.emptyList();
+        String sql = "SELECT * FROM habit_schedule_versions WHERE habit_id IN (:habitIds) ORDER BY effective_from DESC, created_at DESC";
+        return jdbc.query(sql, new MapSqlParameterSource("habitIds", habitIds), ScheduleVersionRowMapper.INSTANCE);
     }
 
     public void closeActiveVersions(UUID habitId, LocalDate effectiveUntil) {

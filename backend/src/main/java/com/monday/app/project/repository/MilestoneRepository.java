@@ -97,6 +97,26 @@ public class MilestoneRepository {
                 .stream().findFirst();
     }
 
+    public java.util.Map<UUID, Milestone> findNextMilestonesByProjectIds(java.util.Collection<UUID> projectIds) {
+        if (projectIds == null || projectIds.isEmpty()) return java.util.Collections.emptyMap();
+        String sql = """
+                SELECT DISTINCT ON (project_id) *
+                FROM milestones
+                WHERE project_id IN (:projectIds)
+                  AND status NOT IN ('COMPLETED', 'CANCELLED')
+                ORDER BY project_id, due_at ASC NULLS LAST, id
+                """;
+        java.util.List<Milestone> list = jdbc.query(sql, new MapSqlParameterSource("projectIds", projectIds), MilestoneRowMapper.INSTANCE);
+        return list.stream().filter(m -> m.getProjectId() != null)
+                .collect(java.util.stream.Collectors.toMap(Milestone::getProjectId, m -> m, (m1, m2) -> m1));
+    }
+
+    public java.util.List<Milestone> findByProjectIds(java.util.Collection<UUID> projectIds) {
+        if (projectIds == null || projectIds.isEmpty()) return java.util.Collections.emptyList();
+        String sql = "SELECT * FROM milestones WHERE project_id IN (:projectIds) ORDER BY due_at ASC NULLS LAST";
+        return jdbc.query(sql, new MapSqlParameterSource("projectIds", projectIds), MilestoneRowMapper.INSTANCE);
+    }
+
     private MapSqlParameterSource toParams(UUID id, Milestone m) {
         return new MapSqlParameterSource()
                 .addValue("id", id)

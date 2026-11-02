@@ -8,6 +8,7 @@ import com.monday.app.shared.cache.CacheInvalidationService;
 import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.shared.exception.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class AdministrationHabitExecutionService {
@@ -69,11 +71,14 @@ public class AdministrationHabitExecutionService {
             cacheInvalidationService.evictAllAfterCommit(
                     CacheNames.HABIT_ANALYTICS,
                     CacheNames.HABIT_REPORTS,
+                    CacheNames.HABIT_TODAY,
+                    CacheNames.HABIT_WEEK,
                     CacheNames.HOME_DASHBOARD
             );
         }
     }
 
+    @Cacheable(value = CacheNames.HABIT_TODAY, keyGenerator = "userAwareKeyGenerator", sync = true)
     @Transactional
     public TodayHabitViewDto getTodayView(LocalDate date) {
         if (date == null) date = LocalDate.now();
@@ -150,6 +155,7 @@ public class AdministrationHabitExecutionService {
         );
     }
 
+    @Cacheable(value = CacheNames.HABIT_WEEK, keyGenerator = "userAwareKeyGenerator", sync = true)
     @Transactional
     public WeekHabitViewDto getWeekView(LocalDate date) {
         if (date == null) date = LocalDate.now();
@@ -392,22 +398,57 @@ public class AdministrationHabitExecutionService {
         List<AdministrationHabit> activeHabits = habitRepository.findActiveHabits(userId);
         if (activeHabits.isEmpty()) return;
 
+        List<UUID> habitIds = activeHabits.stream().map(AdministrationHabit::getId).toList();
+
+        // 1. Batch preload all pause periods for these habits
+        List<AdministrationHabitPausePeriod> pauses = pausePeriodRepository.findByHabitIds(habitIds);
+        Map<UUID, List<AdministrationHabitPausePeriod>> pausesByHabit = pauses.stream()
+                .collect(Collectors.groupingBy(AdministrationHabitPausePeriod::getHabitId));
+
+        // 2. Batch preload all schedule versions for these habits
+        List<AdministrationHabitScheduleVersion> versions = scheduleVersionRepository.findByHabitIds(habitIds);
+        Map<UUID, List<AdministrationHabitScheduleVersion>> versionsByHabit = versions.stream()
+                .collect(Collectors.groupingBy(AdministrationHabitScheduleVersion::getHabitId));
+
+        // 3. Batch preload all existing occurrences for these habits in [from, to]
+        List<AdministrationHabitOccurrence> existing = occurrenceRepository.findByHabitIdsAndDateRange(habitIds, from, to);
+        Set<String> existingKeys = new HashSet<>(existing.size() * 2);
+        for (AdministrationHabitOccurrence occ : existing) {
+            existingKeys.add(occ.getHabitId() + ":" + occ.getScheduledDate());
+        }
+
+        LocalDate today = LocalDate.now();
+        List<AdministrationHabitOccurrence> toCreate = new ArrayList<>();
+
         LocalDate curr = from;
         while (!curr.isAfter(to)) {
+            final LocalDate d = curr;
             for (AdministrationHabit h : activeHabits) {
                 // If paused on this date, skip
-                if (pausePeriodRepository.isHabitPausedOnDate(h.getId(), curr)) {
-                    continue;
+                List<AdministrationHabitPausePeriod> habitPauses = pausesByHabit.get(h.getId());
+                if (habitPauses != null) {
+                    boolean isPaused = habitPauses.stream().anyMatch(p ->
+                            !d.isBefore(p.getStartDate()) && (p.getEndDate() == null || !d.isAfter(p.getEndDate()))
+                    );
+                    if (isPaused) {
+                        continue;
+                    }
                 }
 
                 // Get applicable schedule version for date
-                AdministrationHabitScheduleVersion version = scheduleVersionRepository.findActiveVersionOnDate(h.getId(), curr)
-                        .orElse(null);
+                List<AdministrationHabitScheduleVersion> habitVersions = versionsByHabit.get(h.getId());
+                AdministrationHabitScheduleVersion version = null;
+                if (habitVersions != null) {
+                    version = habitVersions.stream()
+                            .filter(v -> !d.isBefore(v.getEffectiveFrom()) && (v.getEffectiveUntil() == null || !d.isAfter(v.getEffectiveUntil())))
+                            .findFirst()
+                            .orElse(null);
+                }
 
                 if (recurrenceEngine.isScheduledOn(h, version, curr)) {
-                    // Check if occurrence already exists
-                    Optional<AdministrationHabitOccurrence> existing = occurrenceRepository.findByHabitIdAndScheduledDate(h.getId(), curr);
-                    if (existing.isEmpty()) {
+                    String key = h.getId() + ":" + curr;
+                    if (!existingKeys.contains(key)) {
+                        existingKeys.add(key);
                         AdministrationHabitOccurrence occ = new AdministrationHabitOccurrence();
                         occ.setHabitId(h.getId());
                         occ.setScheduleVersionId(version != null ? version.getId() : null);
@@ -415,12 +456,16 @@ public class AdministrationHabitExecutionService {
                         occ.setTargetValueSnapshot(version != null && version.getTargetValue() != null ? version.getTargetValue() : h.getTargetValue());
                         occ.setMinimumTargetSnapshot(version != null && version.getMinimumTargetValue() != null ? version.getMinimumTargetValue() : h.getMinimumTargetValue());
                         occ.setTargetUnitSnapshot(version != null && version.getTargetUnit() != null ? version.getTargetUnit() : h.getTargetUnit());
-                        occ.setStatus(curr.isBefore(LocalDate.now()) ? "MISSED" : "PENDING");
-                        occurrenceRepository.save(occ);
+                        occ.setStatus(curr.isBefore(today) ? "MISSED" : "PENDING");
+                        toCreate.add(occ);
                     }
                 }
             }
             curr = curr.plusDays(1);
+        }
+
+        if (!toCreate.isEmpty()) {
+            occurrenceRepository.batchSave(toCreate);
         }
     }
 
@@ -428,14 +473,25 @@ public class AdministrationHabitExecutionService {
         LocalDate weekStart = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         LocalDate weekEnd = date.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
 
+        List<UUID> habitIds = new ArrayList<>(habitMap.keySet());
+        if (habitIds.isEmpty()) return Collections.emptyList();
+
+        List<AdministrationHabitScheduleVersion> allVersions = scheduleVersionRepository.findByHabitIds(habitIds);
+        Map<UUID, AdministrationHabitScheduleVersion> latestVersions = allVersions.stream()
+                .collect(Collectors.toMap(AdministrationHabitScheduleVersion::getHabitId, v -> v, (v1, v2) -> v1));
+
+        List<AdministrationHabitLog> allLogs = logRepository.findByHabitIdsAndDateRange(habitIds, weekStart, weekEnd);
+        Map<UUID, List<AdministrationHabitLog>> logsByHabit = allLogs.stream()
+                .collect(Collectors.groupingBy(AdministrationHabitLog::getHabitId));
+
         List<FlexibleHabitProgressDto> result = new ArrayList<>();
         for (AdministrationHabit h : habitMap.values()) {
-            AdministrationHabitScheduleVersion version = scheduleVersionRepository.findLatestVersion(h.getId()).orElse(null);
+            AdministrationHabitScheduleVersion version = latestVersions.get(h.getId());
             String scheduleConfig = version != null ? version.getScheduleConfig() : null;
 
             if (recurrenceEngine.isFlexibleTarget(h.getFrequencyType(), scheduleConfig)) {
                 int targetCount = recurrenceEngine.getFlexibleTargetCount(h.getFrequencyType(), scheduleConfig);
-                List<AdministrationHabitLog> logs = logRepository.findByHabitIdAndDateRange(h.getId(), weekStart, weekEnd);
+                List<AdministrationHabitLog> logs = logsByHabit.getOrDefault(h.getId(), Collections.emptyList());
 
                 int completedCount = logs.size();
                 int remaining = Math.max(0, targetCount - completedCount);

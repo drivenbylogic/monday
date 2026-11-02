@@ -60,10 +60,11 @@ public class AdministrationOverviewService {
         LocalDate today = LocalDate.now();
 
         // 1. Obligations
-        int totalActiveObligations = obligationRepository.countActive();
-        int obligationsDueSoonCount = obligationRepository.countDueSoon(today, 7);
-        int obligationsOverdueCount = obligationRepository.countOverdue(today);
-        BigDecimal monthlySubscriptionCommitment = obligationRepository.sumActiveSubscriptionsMonthly();
+        AdministrationObligationRepository.ObligationMetrics obligationMetrics = obligationRepository.getObligationMetrics(today, 7);
+        int totalActiveObligations = obligationMetrics.totalActive();
+        int obligationsDueSoonCount = obligationMetrics.dueSoon();
+        int obligationsOverdueCount = obligationMetrics.overdue();
+        BigDecimal monthlySubscriptionCommitment = obligationMetrics.monthlySubscriptionCommitment();
         List<ObligationDto> upcomingObligations = obligationRepository.findUpcomingDue(today, today.plusDays(30), 5)
                 .stream().map(o -> obligationService.toDto(o, today)).toList();
 
@@ -75,8 +76,9 @@ public class AdministrationOverviewService {
                 .count();
 
         // 3. Gadgets & Maintenance
-        int totalGadgetsCount = gadgetRepository.countAll();
-        int warrantiesExpiringSoonCount = gadgetRepository.countWarrantiesExpiringSoon(today, 60);
+        AdministrationGadgetRepository.GadgetMetrics gadgetMetrics = gadgetRepository.getGadgetMetrics(today, 60);
+        int totalGadgetsCount = gadgetMetrics.totalGadgets();
+        int warrantiesExpiringSoonCount = gadgetMetrics.warrantiesExpiringSoon();
         int maintenanceDueCount = maintenanceRepository.countDue(today);
         List<MaintenanceDto> upcomingMaintenance = maintenanceRepository.findUpcomingDue(today, today.plusDays(60), 5)
                 .stream().map(m -> maintenanceService.toDto(m, today)).toList();

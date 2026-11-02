@@ -19,10 +19,13 @@ public final class CacheNames {
     public static final String FINANCE_MONTHLY_REPORT = "financeMonthlyReportCache";
     public static final String FINANCE_REFERENCE = "financeReferenceCache";
     public static final String PROJECT_METRICS = "projectMetricsCache";
+    public static final String PROJECT_VELOCITY = "projectVelocityCache";
     public static final String VEHICLE_OVERVIEW = "vehicleOverviewCache";
     public static final String VEHICLE_ANALYTICS = "vehicleAnalyticsCache";
     public static final String HABIT_ANALYTICS = "habitAnalyticsCache";
     public static final String HABIT_REPORTS = "habitReportsCache";
+    public static final String HABIT_TODAY = "habitTodayCache";
+    public static final String HABIT_WEEK = "habitWeekCache";
     public static final String GLOBAL_SEARCH = "globalSearchCache";
     public static final String CORE_WEATHER = "coreWeatherCache";
 }
