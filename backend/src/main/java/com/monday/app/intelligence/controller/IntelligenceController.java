@@ -77,9 +77,10 @@ public class IntelligenceController {
             @RequestParam(required = false) UUID feedId,
             @RequestParam(required = false) Boolean bookmarked,
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) String sortBy,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Page<ArticleFeedItemDto> articles = articleFeedService.getArticles(area, feedId, bookmarked, search, page, size);
+        Page<ArticleFeedItemDto> articles = articleFeedService.getArticles(area, feedId, bookmarked, search, page, size, sortBy);
         return ResponseEntity.ok(articles);
     }
 

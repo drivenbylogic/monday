@@ -55,7 +55,30 @@ public interface ArticleRepository extends JpaRepository<Article, UUID> {
             Pageable pageable
     );
 
+    @Query("""
+        SELECT DISTINCT a FROM Article a
+        LEFT JOIN ArticleSource s ON s.article.id = a.id
+        WHERE a.isDeleted = false
+          AND (:area IS NULL OR :area = '' OR 
+               LOWER(a.areaOfInterest) = LOWER(:area) OR 
+               LOWER(s.feed.areaOfInterest) = LOWER(:area))
+          AND (:feedId IS NULL OR s.feed.id = :feedId)
+          AND (:bookmarked IS NULL OR a.bookmarked = :bookmarked)
+          AND (:search IS NULL OR :search = '' OR 
+               LOWER(a.title) LIKE LOWER(CONCAT('%', :search, '%')) OR 
+               LOWER(a.description) LIKE LOWER(CONCAT('%', :search, '%')) OR
+               LOWER(a.author) LIKE LOWER(CONCAT('%', :search, '%')))
+        ORDER BY a.createdAt DESC, a.firstSeenAt DESC
+    """)
+    Page<Article> searchArticlesByAddedTime(
+            @Param("area") String area,
+            @Param("feedId") UUID feedId,
+            @Param("bookmarked") Boolean bookmarked,
+            @Param("search") String search,
+            Pageable pageable
+    );
+
     @Modifying
-    @Query("DELETE FROM Article a WHERE a.createdAt < :cutoff")
+    @Query("DELETE FROM Article a WHERE (a.createdAt < :cutoff OR a.firstSeenAt < :cutoff) AND (a.bookmarked = false OR a.bookmarked IS NULL)")
     int deleteArticlesOlderThan(@Param("cutoff") OffsetDateTime cutoff);
 }

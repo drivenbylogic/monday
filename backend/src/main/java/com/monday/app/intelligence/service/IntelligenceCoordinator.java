@@ -143,16 +143,36 @@ public class IntelligenceCoordinator {
     }
 
     /**
+     * Purges articles and associated summaries older than the specified hours.
+     * Preserves bookmarked articles.
+     */
+    @Transactional
+    public int purgeOldArticles(int hours) {
+        try {
+            OffsetDateTime cutoff = OffsetDateTime.now().minusHours(hours);
+            summaryRepository.deleteSummariesOlderThan(cutoff);
+            int deleted = articleRepository.deleteArticlesOlderThan(cutoff);
+            log.info("Purged {} intelligence articles older than {} hours (cutoff: {})", deleted, hours, cutoff);
+            return deleted;
+        } catch (Exception e) {
+            log.error("Failed to purge old articles older than {} hours: {}", hours, e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
      * Triggers a manual generation run from the UI.
      * Enforces the 6-hour cooldown: if last generation occurred < 6 hours ago,
      * it blocks the generation and returns cooldown status.
      */
     public ExecutionOutcome triggerManualGeneration() {
+        int purged = purgeOldArticles(48);
         IntelligenceStatusDto status = getStatus();
         if (!status.canGenerate()) {
             String reason = status.isRunning()
                     ? "Pipeline is currently executing another run."
-                    : "Cooldown active: manual regeneration is only allowed every 6 hours.";
+                    : "Cooldown active: manual regeneration is only allowed every 6 hours."
+                      + (purged > 0 ? " (Cleaned up " + purged + " older articles)." : "");
             log.info("Manual generation request rejected. {}", reason);
             return new ExecutionOutcome(
                     false,
@@ -187,6 +207,7 @@ public class IntelligenceCoordinator {
         }
 
         OffsetDateTime startedAt = OffsetDateTime.now();
+        purgeOldArticles(48);
         IntelligenceRun run = new IntelligenceRun();
         run.setRunDate(LocalDate.now());
         run.setStartedAt(startedAt);

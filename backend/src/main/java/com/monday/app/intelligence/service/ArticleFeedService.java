@@ -37,12 +37,23 @@ public class ArticleFeedService {
     @Transactional(readOnly = true)
     public Page<ArticleFeedItemDto> getArticles(String area, UUID feedId, Boolean bookmarked,
                                                String search, int page, int size) {
+        return getArticles(area, feedId, bookmarked, search, page, size, null);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ArticleFeedItemDto> getArticles(String area, UUID feedId, Boolean bookmarked,
+                                               String search, int page, int size, String sortBy) {
         Pageable pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
 
         String cleanArea = (area != null && !area.isBlank() && !"all".equalsIgnoreCase(area)) ? area.trim() : null;
         String cleanSearch = (search != null && !search.isBlank()) ? search.trim() : null;
 
-        Page<Article> articlesPage = articleRepository.searchArticles(cleanArea, feedId, bookmarked, cleanSearch, pageable);
+        Page<Article> articlesPage;
+        if ("addedTime".equalsIgnoreCase(sortBy) || "createdAt".equalsIgnoreCase(sortBy) || "added".equalsIgnoreCase(sortBy)) {
+            articlesPage = articleRepository.searchArticlesByAddedTime(cleanArea, feedId, bookmarked, cleanSearch, pageable);
+        } else {
+            articlesPage = articleRepository.searchArticles(cleanArea, feedId, bookmarked, cleanSearch, pageable);
+        }
 
         List<UUID> articleIds = articlesPage.getContent().stream().map(Article::getId).collect(Collectors.toList());
 

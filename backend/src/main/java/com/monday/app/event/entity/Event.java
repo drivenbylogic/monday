@@ -25,6 +25,8 @@ public final class Event {
     private boolean requiresPrep;
     private String prepTitle;
     private String prepDueText;
+    private java.util.List<String> prepTasks;
+    private java.util.List<java.util.Map<String, Object>> prepChecklist;
 
     public Event() {}
 
@@ -88,6 +90,12 @@ public final class Event {
 
     public String getPrepDueText() { return prepDueText; }
     public void setPrepDueText(String prepDueText) { this.prepDueText = prepDueText; }
+
+    public java.util.List<String> getPrepTasks() { return prepTasks; }
+    public void setPrepTasks(java.util.List<String> prepTasks) { this.prepTasks = prepTasks; }
+
+    public java.util.List<java.util.Map<String, Object>> getPrepChecklist() { return prepChecklist; }
+    public void setPrepChecklist(java.util.List<java.util.Map<String, Object>> prepChecklist) { this.prepChecklist = prepChecklist; }
 
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

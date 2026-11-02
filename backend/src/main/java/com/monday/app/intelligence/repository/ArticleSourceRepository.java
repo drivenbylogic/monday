@@ -3,6 +3,7 @@ package com.monday.app.intelligence.repository;
 import com.monday.app.intelligence.entity.ArticleSource;
 import com.monday.app.intelligence.entity.ArticleSourceId;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -13,4 +14,7 @@ public interface ArticleSourceRepository extends JpaRepository<ArticleSource, Ar
     List<ArticleSource> findByIdArticleId(UUID articleId);
     List<ArticleSource> findByIdFeedId(UUID feedId);
     List<ArticleSource> findByIdArticleIdIn(List<UUID> articleIds);
+
+    @Query("SELECT s.feed.id, COUNT(s.article.id) FROM ArticleSource s GROUP BY s.feed.id")
+    List<Object[]> countArticlesByFeed();
 }

@@ -27,7 +27,12 @@ public class EventService {
         if (event.getEventType() == null) {
             event.setEventType("PERSONAL");
         }
-        return eventRepository.save(event);
+        Event saved = eventRepository.save(event);
+        if (event.isRequiresPrep() && event.getPrepTasks() != null && !event.getPrepTasks().isEmpty()) {
+            eventRepository.savePrepItems(saved.getId(), event.getPrepTasks());
+            saved.setPrepChecklist(eventRepository.getPrepItemsForEvent(saved.getId()));
+        }
+        return saved;
     }
 
     @Transactional
@@ -45,21 +50,47 @@ public class EventService {
         existing.setRecurrencePattern(updated.getRecurrencePattern());
         existing.setLocation(updated.getLocation());
         existing.setStatus(updated.getStatus());
+        existing.setRequiresPrep(updated.isRequiresPrep());
+        existing.setPrepTitle(updated.getPrepTitle());
+        existing.setPrepDueText(updated.getPrepDueText());
 
-        return eventRepository.update(existing);
+        Event saved = eventRepository.update(existing);
+        if (updated.getPrepTasks() != null) {
+            eventRepository.savePrepItems(saved.getId(), updated.getPrepTasks());
+        }
+        if (saved.isRequiresPrep()) {
+            saved.setPrepChecklist(eventRepository.getPrepItemsForEvent(saved.getId()));
+        }
+        return saved;
     }
 
     public Event getById(UUID id) {
-        return eventRepository.findById(id)
+        Event event = eventRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Event", id));
+        if (event.isRequiresPrep()) {
+            event.setPrepChecklist(eventRepository.getPrepItemsForEvent(event.getId()));
+        }
+        return event;
     }
 
     public List<Event> getAll() {
-        return eventRepository.findAll();
+        List<Event> events = eventRepository.findAll();
+        for (Event event : events) {
+            if (event.isRequiresPrep()) {
+                event.setPrepChecklist(eventRepository.getPrepItemsForEvent(event.getId()));
+            }
+        }
+        return events;
     }
 
     public List<Event> getUpcoming(Instant from, Instant to) {
-        return eventRepository.findUpcoming(from, to);
+        List<Event> events = eventRepository.findUpcoming(from, to);
+        for (Event event : events) {
+            if (event.isRequiresPrep()) {
+                event.setPrepChecklist(eventRepository.getPrepItemsForEvent(event.getId()));
+            }
+        }
+        return events;
     }
 
     @Transactional

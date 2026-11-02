@@ -32,9 +32,11 @@ public class EventRepository {
         UUID id = event.getId() != null ? event.getId() : UUID.randomUUID();
         String sql = """
                 INSERT INTO events (id, title, description, event_type, start_at, end_at,
-                    all_day, is_recurring, recurrence_pattern, location, status)
+                    all_day, is_recurring, recurrence_pattern, location, status,
+                    requires_prep, prep_title, prep_due_text)
                 VALUES (:id, :title, :description, :eventType, :startAt, :endAt,
-                    :allDay, :isRecurring, :recurrencePattern, :location, :status)
+                    :allDay, :isRecurring, :recurrencePattern, :location, :status,
+                    :requiresPrep, :prepTitle, :prepDueText)
                 RETURNING *
                 """;
         return jdbc.queryForObject(sql, toParams(id, event), EventRowMapper.INSTANCE);
@@ -46,7 +48,8 @@ public class EventRepository {
                     title = :title, description = :description, event_type = :eventType,
                     start_at = :startAt, end_at = :endAt, all_day = :allDay,
                     is_recurring = :isRecurring, recurrence_pattern = :recurrencePattern,
-                    location = :location, status = :status
+                    location = :location, status = :status,
+                    requires_prep = :requiresPrep, prep_title = :prepTitle, prep_due_text = :prepDueText
                 WHERE id = :id
                 RETURNING *
                 """;
@@ -79,6 +82,27 @@ public class EventRepository {
         jdbc.update("DELETE FROM events WHERE id = :id", new MapSqlParameterSource("id", id));
     }
 
+    public List<java.util.Map<String, Object>> getPrepItemsForEvent(UUID eventId) {
+        String sql = "SELECT id, text, completed, due FROM event_prep_items WHERE event_id = :eventId ORDER BY created_at ASC";
+        return jdbc.queryForList(sql, new MapSqlParameterSource("eventId", eventId));
+    }
+
+    public void savePrepItems(UUID eventId, List<String> prepTasks) {
+        if (prepTasks == null) return;
+        // Clean existing
+        jdbc.update("DELETE FROM event_prep_items WHERE event_id = :eventId", new MapSqlParameterSource("eventId", eventId));
+        String insertSql = "INSERT INTO event_prep_items (id, event_id, text, completed) VALUES (:id, :eventId, :text, false)";
+        for (String taskText : prepTasks) {
+            if (taskText != null && !taskText.trim().isEmpty()) {
+                MapSqlParameterSource params = new MapSqlParameterSource()
+                        .addValue("id", UUID.randomUUID())
+                        .addValue("eventId", eventId)
+                        .addValue("text", taskText.trim());
+                jdbc.update(insertSql, params);
+            }
+        }
+    }
+
     private MapSqlParameterSource toParams(UUID id, Event e) {
         return new MapSqlParameterSource()
                 .addValue("id", id)
@@ -91,7 +115,10 @@ public class EventRepository {
                 .addValue("isRecurring", e.isRecurring())
                 .addValue("recurrencePattern", e.getRecurrencePattern())
                 .addValue("location", e.getLocation())
-                .addValue("status", e.getStatus());
+                .addValue("status", e.getStatus())
+                .addValue("requiresPrep", e.isRequiresPrep())
+                .addValue("prepTitle", e.getPrepTitle())
+                .addValue("prepDueText", e.getPrepDueText());
     }
 
     static final class EventRowMapper implements RowMapper<Event> {

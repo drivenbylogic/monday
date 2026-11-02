@@ -43,8 +43,20 @@ public class FeedManagementService {
 
     @Transactional(readOnly = true)
     public List<RssNodeDto> getAllNodes() {
+        Map<UUID, Long> countMap = new HashMap<>();
+        try {
+            List<Object[]> counts = articleSourceRepository.countArticlesByFeed();
+            for (Object[] row : counts) {
+                if (row != null && row.length >= 2 && row[0] != null && row[1] != null) {
+                    countMap.put((UUID) row[0], ((Number) row[1]).longValue());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to batch count articles by feed: {}", e.getMessage());
+        }
+
         return feedRepository.findAll().stream()
-                .map(this::toDto)
+                .map(feed -> toDto(feed, countMap.getOrDefault(feed.getId(), 0L)))
                 .collect(Collectors.toList());
     }
 
@@ -260,7 +272,14 @@ public class FeedManagementService {
     }
 
     private RssNodeDto toDto(RssFeed feed) {
-        long count = articleSourceRepository.findByIdFeedId(feed.getId()).size();
+        long count = 0;
+        try {
+            count = articleSourceRepository.findByIdFeedId(feed.getId()).size();
+        } catch (Exception ignored) {}
+        return toDto(feed, count);
+    }
+
+    private RssNodeDto toDto(RssFeed feed, long count) {
         return new RssNodeDto(
                 feed.getId(),
                 feed.getName(),
