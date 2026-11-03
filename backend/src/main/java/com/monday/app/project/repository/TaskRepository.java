@@ -71,6 +71,21 @@ public class TaskRepository {
                 TaskRowMapper.INSTANCE);
     }
 
+    public List<Task> findPaged(int page, int size) {
+        int offset = Math.max(0, page) * Math.max(1, size);
+        String sql = "SELECT * FROM tasks ORDER BY due_at NULLS LAST, priority, created_at DESC LIMIT :limit OFFSET :offset";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("limit", size)
+                .addValue("offset", offset);
+        return jdbc.query(sql, params, TaskRowMapper.INSTANCE);
+    }
+
+    public int countAll() {
+        String sql = "SELECT COUNT(*) FROM tasks";
+        Integer count = jdbc.queryForObject(sql, new MapSqlParameterSource(), Integer.class);
+        return count != null ? count : 0;
+    }
+
     public List<Task> findByProjectId(UUID projectId) {
         String sql = "SELECT * FROM tasks WHERE project_id = :projectId ORDER BY due_at NULLS LAST, priority";
         return jdbc.query(sql, new MapSqlParameterSource("projectId", projectId), TaskRowMapper.INSTANCE);

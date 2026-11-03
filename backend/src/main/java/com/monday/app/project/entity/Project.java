@@ -14,6 +14,7 @@ public final class Project {
     private String category;
     private String status;
     private String priority;
+    private String leadArchitect;
     private String tags;
     private Instant startAt;
     private Instant dueAt;
@@ -26,12 +27,20 @@ public final class Project {
     public Project(UUID id, String name, String description, String category, String status, String priority, String tags,
                    Instant startAt, Instant dueAt, Instant completedAt,
                    Instant createdAt, Instant updatedAt) {
+        this(id, name, description, category, status, priority, null, tags, startAt, dueAt, completedAt, createdAt, updatedAt);
+    }
+
+    public Project(UUID id, String name, String description, String category, String status, String priority,
+                   String leadArchitect, String tags,
+                   Instant startAt, Instant dueAt, Instant completedAt,
+                   Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.name = name;
         this.description = description;
         this.category = category;
         this.status = status;
         this.priority = priority;
+        this.leadArchitect = leadArchitect;
         this.tags = tags;
         this.startAt = startAt;
         this.dueAt = dueAt;
@@ -57,6 +66,9 @@ public final class Project {
 
     public String getPriority() { return priority; }
     public void setPriority(String priority) { this.priority = priority; }
+
+    public String getLeadArchitect() { return leadArchitect; }
+    public void setLeadArchitect(String leadArchitect) { this.leadArchitect = leadArchitect; }
     
     public String getTags() { return tags; }
 

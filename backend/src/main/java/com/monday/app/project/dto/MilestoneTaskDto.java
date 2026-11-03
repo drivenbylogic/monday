@@ -7,6 +7,7 @@ public class MilestoneTaskDto {
     private String milestoneId;
     private String title;
     private String description;
+    private String dueDate;
     private String dueTime;
     private Instant dueAt;
     private boolean completed;
@@ -17,10 +18,16 @@ public class MilestoneTaskDto {
 
     public MilestoneTaskDto(String id, String milestoneId, String title, String description,
                             String dueTime, Instant dueAt, boolean completed, String status, String priority) {
+        this(id, milestoneId, title, description, null, dueTime, dueAt, completed, status, priority);
+    }
+
+    public MilestoneTaskDto(String id, String milestoneId, String title, String description,
+                            String dueDate, String dueTime, Instant dueAt, boolean completed, String status, String priority) {
         this.id = id;
         this.milestoneId = milestoneId;
         this.title = title;
         this.description = description;
+        this.dueDate = dueDate;
         this.dueTime = dueTime;
         this.dueAt = dueAt;
         this.completed = completed;
@@ -40,6 +47,9 @@ public class MilestoneTaskDto {
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
 
+    public String getDueDate() { return dueDate; }
+    public void setDueDate(String dueDate) { this.dueDate = dueDate; }
+
     public String getDueTime() { return dueTime; }
     public void setDueTime(String dueTime) { this.dueTime = dueTime; }
 
@@ -55,4 +65,3 @@ public class MilestoneTaskDto {
     public String getPriority() { return priority; }
     public void setPriority(String priority) { this.priority = priority; }
 }
-

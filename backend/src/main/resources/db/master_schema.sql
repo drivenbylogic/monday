@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS projects (
     category VARCHAR(50) NOT NULL DEFAULT 'GENERAL',
     status VARCHAR(50) NOT NULL DEFAULT 'PLANNING',
     priority VARCHAR(50) NOT NULL DEFAULT 'MEDIUM',
+    lead_architect VARCHAR(255),
     tags JSONB,
     start_at TIMESTAMPTZ,
     due_at TIMESTAMPTZ,
@@ -338,7 +339,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     account_id UUID REFERENCES finance_accounts(id) ON DELETE SET NULL,
-    credit_card_id UUID REFERENCES credit_accounts(id) ON DELETE SET NULL
+    credit_card_id UUID REFERENCES credit_accounts(id) ON DELETE SET NULL,
+    budget_id UUID REFERENCES budgets(id) ON DELETE SET NULL
 );
 
 DROP TRIGGER IF EXISTS trg_transactions_updated_at ON transactions;
@@ -350,6 +352,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_at ON transactions(transaction_at);
 CREATE INDEX IF NOT EXISTS idx_transactions_category_id ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_account_id ON transactions(account_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_credit_card_id ON transactions(credit_card_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_budget_id ON transactions(budget_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_type_at ON transactions(transaction_type, transaction_at);
 
 CREATE TABLE IF NOT EXISTS portfolio_allocations (

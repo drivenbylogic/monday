@@ -32,6 +32,7 @@ public interface ArticleRepository extends JpaRepository<Article, UUID> {
     @Query("SELECT a FROM Article a WHERE a.isDeleted = false AND a.createdAt >= :cutoff ORDER BY a.publishedAt DESC NULLS LAST, a.firstSeenAt DESC")
     List<Article> findRecentArticles(@Param("cutoff") OffsetDateTime cutoff);
 
+    // Published date - Newest to Oldest
     @Query(value = """
         SELECT DISTINCT a FROM Article a
         LEFT JOIN ArticleSource s ON s.article.id = a.id
@@ -69,6 +70,45 @@ public interface ArticleRepository extends JpaRepository<Article, UUID> {
             Pageable pageable
     );
 
+    // Published date - Oldest to Newest
+    @Query(value = """
+        SELECT DISTINCT a FROM Article a
+        LEFT JOIN ArticleSource s ON s.article.id = a.id
+        WHERE a.isDeleted = false
+          AND (:area IS NULL OR :area = '' OR 
+               LOWER(a.areaOfInterest) = LOWER(:area) OR 
+               LOWER(s.feed.areaOfInterest) = LOWER(:area))
+          AND (:feedId IS NULL OR s.feed.id = :feedId)
+          AND (:bookmarked IS NULL OR a.bookmarked = :bookmarked)
+          AND (:search IS NULL OR :search = '' OR 
+               LOWER(a.title) LIKE LOWER(CONCAT('%', :search, '%')) OR 
+               LOWER(a.description) LIKE LOWER(CONCAT('%', :search, '%')) OR
+               LOWER(a.author) LIKE LOWER(CONCAT('%', :search, '%')))
+        ORDER BY a.publishedAt ASC NULLS LAST, a.firstSeenAt ASC
+    """,
+    countQuery = """
+        SELECT count(DISTINCT a) FROM Article a
+        LEFT JOIN ArticleSource s ON s.article.id = a.id
+        WHERE a.isDeleted = false
+          AND (:area IS NULL OR :area = '' OR 
+               LOWER(a.areaOfInterest) = LOWER(:area) OR 
+               LOWER(s.feed.areaOfInterest) = LOWER(:area))
+          AND (:feedId IS NULL OR s.feed.id = :feedId)
+          AND (:bookmarked IS NULL OR a.bookmarked = :bookmarked)
+          AND (:search IS NULL OR :search = '' OR 
+               LOWER(a.title) LIKE LOWER(CONCAT('%', :search, '%')) OR 
+               LOWER(a.description) LIKE LOWER(CONCAT('%', :search, '%')) OR
+               LOWER(a.author) LIKE LOWER(CONCAT('%', :search, '%')))
+    """)
+    Page<Article> searchArticlesByPublishedAtAsc(
+            @Param("area") String area,
+            @Param("feedId") UUID feedId,
+            @Param("bookmarked") Boolean bookmarked,
+            @Param("search") String search,
+            Pageable pageable
+    );
+
+    // Added time - Newest to Oldest
     @Query(value = """
         SELECT DISTINCT a FROM Article a
         LEFT JOIN ArticleSource s ON s.article.id = a.id
@@ -106,7 +146,93 @@ public interface ArticleRepository extends JpaRepository<Article, UUID> {
             Pageable pageable
     );
 
+    // Added time - Oldest to Newest
+    @Query(value = """
+        SELECT DISTINCT a FROM Article a
+        LEFT JOIN ArticleSource s ON s.article.id = a.id
+        WHERE a.isDeleted = false
+          AND (:area IS NULL OR :area = '' OR 
+               LOWER(a.areaOfInterest) = LOWER(:area) OR 
+               LOWER(s.feed.areaOfInterest) = LOWER(:area))
+          AND (:feedId IS NULL OR s.feed.id = :feedId)
+          AND (:bookmarked IS NULL OR a.bookmarked = :bookmarked)
+          AND (:search IS NULL OR :search = '' OR 
+               LOWER(a.title) LIKE LOWER(CONCAT('%', :search, '%')) OR 
+               LOWER(a.description) LIKE LOWER(CONCAT('%', :search, '%')) OR
+               LOWER(a.author) LIKE LOWER(CONCAT('%', :search, '%')))
+        ORDER BY a.createdAt ASC, a.firstSeenAt ASC
+    """,
+    countQuery = """
+        SELECT count(DISTINCT a) FROM Article a
+        LEFT JOIN ArticleSource s ON s.article.id = a.id
+        WHERE a.isDeleted = false
+          AND (:area IS NULL OR :area = '' OR 
+               LOWER(a.areaOfInterest) = LOWER(:area) OR 
+               LOWER(s.feed.areaOfInterest) = LOWER(:area))
+          AND (:feedId IS NULL OR s.feed.id = :feedId)
+          AND (:bookmarked IS NULL OR a.bookmarked = :bookmarked)
+          AND (:search IS NULL OR :search = '' OR 
+               LOWER(a.title) LIKE LOWER(CONCAT('%', :search, '%')) OR 
+               LOWER(a.description) LIKE LOWER(CONCAT('%', :search, '%')) OR
+               LOWER(a.author) LIKE LOWER(CONCAT('%', :search, '%')))
+    """)
+    Page<Article> searchArticlesByAddedTimeAsc(
+            @Param("area") String area,
+            @Param("feedId") UUID feedId,
+            @Param("bookmarked") Boolean bookmarked,
+            @Param("search") String search,
+            Pageable pageable
+    );
+
     @Modifying
-    @Query("DELETE FROM Article a WHERE (a.createdAt < :cutoff OR a.firstSeenAt < :cutoff) AND (a.bookmarked = false OR a.bookmarked IS NULL)")
+    @Query(value = """
+        DELETE FROM article_sources WHERE article_id IN (
+            SELECT id FROM articles WHERE (bookmarked = false OR bookmarked IS NULL)
+            AND (created_at < :cutoff OR first_seen_at < :cutoff OR (published_at IS NOT NULL AND published_at < :cutoff))
+        )
+    """, nativeQuery = true)
+    int deleteOldArticleSources(@Param("cutoff") OffsetDateTime cutoff);
+
+    @Modifying
+    @Query(value = """
+        DELETE FROM article_summaries WHERE article_id IN (
+            SELECT id FROM articles WHERE (bookmarked = false OR bookmarked IS NULL)
+            AND (created_at < :cutoff OR first_seen_at < :cutoff OR (published_at IS NOT NULL AND published_at < :cutoff))
+        )
+    """, nativeQuery = true)
+    int deleteOldArticleSummaries(@Param("cutoff") OffsetDateTime cutoff);
+
+    @Modifying
+    @Query(value = """
+        DELETE FROM article_classifications WHERE article_id IN (
+            SELECT id FROM articles WHERE (bookmarked = false OR bookmarked IS NULL)
+            AND (created_at < :cutoff OR first_seen_at < :cutoff OR (published_at IS NOT NULL AND published_at < :cutoff))
+        )
+    """, nativeQuery = true)
+    int deleteOldArticleClassifications(@Param("cutoff") OffsetDateTime cutoff);
+
+    @Modifying
+    @Query(value = """
+        DELETE FROM daily_article_selections WHERE article_id IN (
+            SELECT id FROM articles WHERE (bookmarked = false OR bookmarked IS NULL)
+            AND (created_at < :cutoff OR first_seen_at < :cutoff OR (published_at IS NOT NULL AND published_at < :cutoff))
+        )
+    """, nativeQuery = true)
+    int deleteOldDailySelections(@Param("cutoff") OffsetDateTime cutoff);
+
+    @Modifying
+    @Query(value = """
+        UPDATE articles SET duplicate_of_id = NULL WHERE duplicate_of_id IN (
+            SELECT id FROM articles WHERE (bookmarked = false OR bookmarked IS NULL)
+            AND (created_at < :cutoff OR first_seen_at < :cutoff OR (published_at IS NOT NULL AND published_at < :cutoff))
+        )
+    """, nativeQuery = true)
+    int clearOldArticleDuplicateRefs(@Param("cutoff") OffsetDateTime cutoff);
+
+    @Modifying
+    @Query(value = """
+        DELETE FROM articles WHERE (bookmarked = false OR bookmarked IS NULL)
+        AND (created_at < :cutoff OR first_seen_at < :cutoff OR (published_at IS NOT NULL AND published_at < :cutoff))
+    """, nativeQuery = true)
     int deleteArticlesOlderThan(@Param("cutoff") OffsetDateTime cutoff);
 }

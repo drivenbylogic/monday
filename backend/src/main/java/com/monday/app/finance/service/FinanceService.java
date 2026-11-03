@@ -308,6 +308,16 @@ public class FinanceService {
 
     @Transactional
     public Transaction createTransaction(Transaction txn) {
+        if (txn.getBudgetId() != null) {
+            Optional<Budget> bOpt = budgetRepository.findById(txn.getBudgetId());
+            if (bOpt.isPresent()) {
+                if (txn.getCategoryId() == null && bOpt.get().getCategoryId() != null) {
+                    txn.setCategoryId(bOpt.get().getCategoryId());
+                }
+            } else {
+                txn.setBudgetId(null);
+            }
+        }
         if (txn.getCategoryId() == null) {
             List<BudgetCategory> allCats = categoryRepository.findAll();
             for (BudgetCategory cat : allCats) {
@@ -367,6 +377,10 @@ public class FinanceService {
             return Collections.emptyList();
         }
 
+        // 0. Preload budgets for envelope resolution
+        List<Budget> allBudgets = budgetRepository.findAll();
+        Map<UUID, Budget> budgetMap = allBudgets.stream().collect(Collectors.toMap(Budget::getId, b -> b, (b1, b2) -> b1));
+
         // 1. Preload categories once
         List<BudgetCategory> allCats = categoryRepository.findAll();
         Set<UUID> validCatIds = allCats.stream().map(BudgetCategory::getId).collect(Collectors.toSet());
@@ -382,6 +396,17 @@ public class FinanceService {
         Map<UUID, BigDecimal> accountDeltas = new HashMap<>();
 
         for (Transaction txn : transactions) {
+            // Envelope resolution in memory
+            if (txn.getBudgetId() != null) {
+                Budget b = budgetMap.get(txn.getBudgetId());
+                if (b != null) {
+                    if (txn.getCategoryId() == null && b.getCategoryId() != null) {
+                        txn.setCategoryId(b.getCategoryId());
+                    }
+                } else {
+                    txn.setBudgetId(null);
+                }
+            }
             // Category resolution in memory
             if (txn.getCategoryId() == null) {
                 for (BudgetCategory cat : allCats) {
@@ -624,6 +649,15 @@ public class FinanceService {
         existing.setAmount(updated.getAmount());
         existing.setTransactionAt(updated.getTransactionAt());
         existing.setCategoryId(updated.getCategoryId());
+        if (updated.getBudgetId() != null) {
+            existing.setBudgetId(updated.getBudgetId());
+            if (updated.getCategoryId() == null) {
+                Optional<Budget> bOpt = budgetRepository.findById(updated.getBudgetId());
+                if (bOpt.isPresent() && bOpt.get().getCategoryId() != null) {
+                    existing.setCategoryId(bOpt.get().getCategoryId());
+                }
+            }
+        }
         existing.setPaymentMethod(updated.getPaymentMethod());
         existing.setDescription(updated.getDescription());
         existing.setNotes(updated.getNotes());

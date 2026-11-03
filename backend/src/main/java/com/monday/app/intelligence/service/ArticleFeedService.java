@@ -49,8 +49,13 @@ public class ArticleFeedService {
         String cleanSearch = (search != null && !search.isBlank()) ? search.trim() : null;
 
         Page<Article> articlesPage;
-        if ("addedTime".equalsIgnoreCase(sortBy) || "createdAt".equalsIgnoreCase(sortBy) || "added".equalsIgnoreCase(sortBy)) {
+        String normalizedSort = sortBy != null ? sortBy.trim().toLowerCase() : "published_desc";
+        if (normalizedSort.equals("added_asc") || normalizedSort.equals("addedtime_asc") || normalizedSort.equals("createdat_asc")) {
+            articlesPage = articleRepository.searchArticlesByAddedTimeAsc(cleanArea, feedId, bookmarked, cleanSearch, pageable);
+        } else if (normalizedSort.equals("added_desc") || normalizedSort.equals("addedtime") || normalizedSort.equals("addedtime_desc") || normalizedSort.equals("createdat") || normalizedSort.equals("added")) {
             articlesPage = articleRepository.searchArticlesByAddedTime(cleanArea, feedId, bookmarked, cleanSearch, pageable);
+        } else if (normalizedSort.equals("published_asc") || normalizedSort.equals("publishedat_asc")) {
+            articlesPage = articleRepository.searchArticlesByPublishedAtAsc(cleanArea, feedId, bookmarked, cleanSearch, pageable);
         } else {
             articlesPage = articleRepository.searchArticles(cleanArea, feedId, bookmarked, cleanSearch, pageable);
         }

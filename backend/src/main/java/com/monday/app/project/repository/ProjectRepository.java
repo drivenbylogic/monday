@@ -25,8 +25,8 @@ public class ProjectRepository {
     public Project save(Project project) {
         UUID id = project.getId() != null ? project.getId() : UUID.randomUUID();
         String sql = """
-                INSERT INTO projects (id, name, description, category, status, priority, tags, start_at, due_at, completed_at)
-                VALUES (:id, :name, :description, :category, :status, :priority, CAST(:tags AS jsonb), :startAt, :dueAt, :completedAt)
+                INSERT INTO projects (id, name, description, category, status, priority, lead_architect, tags, start_at, due_at, completed_at)
+                VALUES (:id, :name, :description, :category, :status, :priority, :leadArchitect, CAST(:tags AS jsonb), :startAt, :dueAt, :completedAt)
                 RETURNING *
                 """;
         return jdbc.queryForObject(sql, toParams(id, project), ProjectRowMapper.INSTANCE);
@@ -40,6 +40,7 @@ public class ProjectRepository {
                     category = :category,
                     status = :status,
                     priority = :priority,
+                    lead_architect = :leadArchitect,
                     tags = CAST(:tags AS jsonb),
                     start_at = :startAt,
                     due_at = :dueAt,
@@ -92,6 +93,7 @@ public class ProjectRepository {
                 .addValue("category", p.getCategory())
                 .addValue("status", p.getStatus())
                 .addValue("priority", p.getPriority())
+                .addValue("leadArchitect", p.getLeadArchitect())
                 .addValue("tags", safeTags)
                 .addValue("startAt", p.getStartAt() != null ? Timestamp.from(p.getStartAt()) : null)
                 .addValue("dueAt", p.getDueAt() != null ? Timestamp.from(p.getDueAt()) : null)
@@ -103,6 +105,11 @@ public class ProjectRepository {
 
         @Override
         public Project mapRow(ResultSet rs, int rowNum) throws SQLException {
+            String leadArchitect = null;
+            try {
+                leadArchitect = rs.getString("lead_architect");
+            } catch (SQLException ignored) {}
+
             return new Project(
                     UUID.fromString(rs.getString("id")),
                     rs.getString("name"),
@@ -110,6 +117,7 @@ public class ProjectRepository {
                     rs.getString("category"),
                     rs.getString("status"),
                     rs.getString("priority"),
+                    leadArchitect,
                     rs.getString("tags"),
                     rs.getTimestamp("start_at") != null ? rs.getTimestamp("start_at").toInstant() : null,
                     rs.getTimestamp("due_at") != null ? rs.getTimestamp("due_at").toInstant() : null,

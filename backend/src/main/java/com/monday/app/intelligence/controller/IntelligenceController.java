@@ -71,6 +71,16 @@ public class IntelligenceController {
         return refreshIntelligence();
     }
 
+    @PostMapping("/cleanup")
+    public ResponseEntity<Map<String, Object>> cleanupArticles(@RequestParam(defaultValue = "48") int hours) {
+        int purged = coordinator.purgeOldArticles(hours);
+        return ResponseEntity.ok(Map.of(
+                "purgedCount", purged,
+                "hours", hours,
+                "message", "Successfully cleaned up " + purged + " articles older than " + hours + " hours."
+        ));
+    }
+
     @GetMapping("/articles")
     public ResponseEntity<Page<ArticleFeedItemDto>> getArticles(
             @RequestParam(required = false) String area,

@@ -107,6 +107,14 @@ public class TaskService {
         return taskRepository.findAll();
     }
 
+    public List<Task> getPaged(int page, int size) {
+        return taskRepository.findPaged(page, size);
+    }
+
+    public int countAll() {
+        return taskRepository.countAll();
+    }
+
     public List<Task> getByProjectId(UUID projectId) {
         return taskRepository.findByProjectId(projectId);
     }

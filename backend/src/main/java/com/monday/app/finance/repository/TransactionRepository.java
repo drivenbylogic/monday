@@ -29,10 +29,10 @@ public class TransactionRepository {
         UUID id = txn.getId() != null ? txn.getId() : UUID.randomUUID();
         String sql = """
                 INSERT INTO transactions (id, transaction_type, amount, transaction_at,
-                    category_id, payment_method, description, notes,
+                    category_id, budget_id, payment_method, description, notes,
                     linked_module, linked_entity_id, linked_entity_type, account_id, credit_card_id)
                 VALUES (:id, :transactionType, :amount, :transactionAt,
-                    :categoryId, :paymentMethod, :description, :notes,
+                    :categoryId, :budgetId, :paymentMethod, :description, :notes,
                     :linkedModule, :linkedEntityId, :linkedEntityType, :accountId, :creditCardId)
                 RETURNING *
                 """;
@@ -54,10 +54,10 @@ public class TransactionRepository {
 
         String sql = """
                 INSERT INTO transactions (id, transaction_type, amount, transaction_at,
-                    category_id, payment_method, description, notes,
+                    category_id, budget_id, payment_method, description, notes,
                     linked_module, linked_entity_id, linked_entity_type, account_id, credit_card_id)
                 VALUES (:id, :transactionType, :amount, :transactionAt,
-                    :categoryId, :paymentMethod, :description, :notes,
+                    :categoryId, :budgetId, :paymentMethod, :description, :notes,
                     :linkedModule, :linkedEntityId, :linkedEntityType, :accountId, :creditCardId)
                 """;
 
@@ -75,7 +75,7 @@ public class TransactionRepository {
         String sql = """
                 UPDATE transactions SET
                     transaction_type = :transactionType, amount = :amount,
-                    transaction_at = :transactionAt, category_id = :categoryId,
+                    transaction_at = :transactionAt, category_id = :categoryId, budget_id = :budgetId,
                     payment_method = :paymentMethod, description = :description, notes = :notes,
                     linked_module = :linkedModule, linked_entity_id = :linkedEntityId, linked_entity_type = :linkedEntityType,
                     account_id = :accountId, credit_card_id = :creditCardId
@@ -86,9 +86,10 @@ public class TransactionRepository {
 
     public Optional<Transaction> findById(UUID id) {
         String sql = """
-                SELECT t.*, bc.name as category_name
+                SELECT t.*, bc.name as category_name, b.name as budget_name
                 FROM transactions t
                 LEFT JOIN budget_categories bc ON t.category_id = bc.id
+                LEFT JOIN budgets b ON t.budget_id = b.id
                 WHERE t.id = :id
                 """;
         return jdbc.query(sql,
@@ -97,9 +98,10 @@ public class TransactionRepository {
 
     public List<Transaction> findAll() {
         String sql = """
-                SELECT t.*, bc.name as category_name
+                SELECT t.*, bc.name as category_name, b.name as budget_name
                 FROM transactions t
                 LEFT JOIN budget_categories bc ON t.category_id = bc.id
+                LEFT JOIN budgets b ON t.budget_id = b.id
                 ORDER BY t.transaction_at DESC
                 """;
         return jdbc.query(sql, TransactionRowMapper.INSTANCE);
@@ -107,9 +109,10 @@ public class TransactionRepository {
 
     public List<Transaction> findByDateRange(Instant from, Instant to) {
         String sql = """
-                SELECT t.*, bc.name as category_name
+                SELECT t.*, bc.name as category_name, b.name as budget_name
                 FROM transactions t
                 LEFT JOIN budget_categories bc ON t.category_id = bc.id
+                LEFT JOIN budgets b ON t.budget_id = b.id
                 WHERE t.transaction_at >= :from AND t.transaction_at <= :to
                 ORDER BY t.transaction_at DESC
                 """;
@@ -148,6 +151,7 @@ public class TransactionRepository {
                 .addValue("amount", t.getAmount())
                 .addValue("transactionAt", Timestamp.from(t.getTransactionAt() != null ? t.getTransactionAt() : Instant.now()))
                 .addValue("categoryId", t.getCategoryId())
+                .addValue("budgetId", t.getBudgetId())
                 .addValue("paymentMethod", t.getPaymentMethod())
                 .addValue("description", t.getDescription())
                 .addValue("notes", t.getNotes())
@@ -184,6 +188,12 @@ public class TransactionRepository {
                 if (ccStr != null) creditCardId = UUID.fromString(ccStr);
             } catch (SQLException ignored) {}
 
+            UUID budgetId = null;
+            try {
+                String bStr = rs.getString("budget_id");
+                if (bStr != null) budgetId = UUID.fromString(bStr);
+            } catch (SQLException ignored) {}
+
             Transaction t = new Transaction(
                     UUID.fromString(rs.getString("id")),
                     rs.getString("transaction_type"),
@@ -201,9 +211,22 @@ public class TransactionRepository {
                     rs.getTimestamp("updated_at").toInstant()
             );
             t.setCreditCardId(creditCardId);
+            t.setBudgetId(budgetId);
+
             try {
-                t.setCategoryName(rs.getString("category_name"));
-            } catch (SQLException ignored) {}
+                String bName = rs.getString("budget_name");
+                t.setBudgetName(bName);
+                if (bName != null && !bName.isBlank()) {
+                    t.setCategoryName(bName);
+                } else {
+                    t.setCategoryName(rs.getString("category_name"));
+                }
+            } catch (SQLException ignored) {
+                try {
+                    t.setCategoryName(rs.getString("category_name"));
+                } catch (SQLException ignored2) {}
+            }
+
             return t;
         }
     }

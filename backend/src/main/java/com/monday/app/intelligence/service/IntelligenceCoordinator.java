@@ -150,12 +150,16 @@ public class IntelligenceCoordinator {
     public int purgeOldArticles(int hours) {
         try {
             OffsetDateTime cutoff = OffsetDateTime.now().minusHours(hours);
-            summaryRepository.deleteSummariesOlderThan(cutoff);
+            articleRepository.deleteOldArticleSources(cutoff);
+            articleRepository.deleteOldArticleSummaries(cutoff);
+            articleRepository.deleteOldArticleClassifications(cutoff);
+            articleRepository.deleteOldDailySelections(cutoff);
+            articleRepository.clearOldArticleDuplicateRefs(cutoff);
             int deleted = articleRepository.deleteArticlesOlderThan(cutoff);
             log.info("Purged {} intelligence articles older than {} hours (cutoff: {})", deleted, hours, cutoff);
             return deleted;
         } catch (Exception e) {
-            log.error("Failed to purge old articles older than {} hours: {}", hours, e.getMessage());
+            log.error("Failed to purge old articles older than {} hours: {}", hours, e.getMessage(), e);
             return 0;
         }
     }
@@ -292,6 +296,10 @@ public class IntelligenceCoordinator {
                     run.setFeedsFailed(run.getFeedsFailed() + 1);
                 }
             }
+
+            // Post-fetch purge: After new articles are fetched, existing unsaved articles older than 48 hours are deleted
+            int postFetchPurged = purgeOldArticles(48);
+            log.info("Post-fetch clean up: purged {} existing unsaved articles older than 48 hours", postFetchPurged);
 
             // Stage 6: AI Summarization with strict cost budget
             for (Map.Entry<RssFeed, List<Article>> entry : selectedPerNode.entrySet()) {

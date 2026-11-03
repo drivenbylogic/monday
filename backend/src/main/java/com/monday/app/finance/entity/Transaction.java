@@ -11,6 +11,7 @@ public final class Transaction {
     private BigDecimal amount;
     private Instant transactionAt;
     private UUID categoryId;
+    private UUID budgetId;
     private String paymentMethod;
     private String description;
     private String notes;
@@ -20,6 +21,7 @@ public final class Transaction {
     private UUID accountId;
     private UUID creditCardId;
     private String categoryName;
+    private String budgetName;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -70,6 +72,8 @@ public final class Transaction {
     public void setTransactionAt(Instant transactionAt) { this.transactionAt = transactionAt; }
     public UUID getCategoryId() { return categoryId; }
     public void setCategoryId(UUID categoryId) { this.categoryId = categoryId; }
+    public UUID getBudgetId() { return budgetId; }
+    public void setBudgetId(UUID budgetId) { this.budgetId = budgetId; }
     public String getPaymentMethod() { return paymentMethod; }
     public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
     public String getDescription() { return description; }
@@ -88,6 +92,8 @@ public final class Transaction {
     public void setCreditCardId(UUID creditCardId) { this.creditCardId = creditCardId; }
     public String getCategoryName() { return categoryName; }
     public void setCategoryName(String categoryName) { this.categoryName = categoryName; }
+    public String getBudgetName() { return budgetName; }
+    public void setBudgetName(String budgetName) { this.budgetName = budgetName; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

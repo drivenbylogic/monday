@@ -135,6 +135,9 @@ public class ProjectService {
         if (updated.getDueAt() != null) {
             existing.setDueAt(updated.getDueAt());
         }
+        if (updated.getLeadArchitect() != null) {
+            existing.setLeadArchitect(updated.getLeadArchitect());
+        }
 
         // Auto-set completedAt when status transitions to COMPLETED
         if ("COMPLETED".equalsIgnoreCase(existing.getStatus()) && existing.getCompletedAt() == null) {
@@ -202,6 +205,7 @@ public class ProjectService {
             resp.setCategory(p.getCategory());
             resp.setStatus(p.getStatus());
             resp.setPriority(p.getPriority());
+            resp.setLeadArchitect(p.getLeadArchitect());
             resp.setTags(p.getTags());
             resp.setStartAt(p.getStartAt());
             resp.setDueAt(p.getDueAt());
@@ -264,8 +268,10 @@ public class ProjectService {
 
                     tDto.setDueAt(t.getDueAt());
                     if (t.getDueAt() != null) {
+                        tDto.setDueDate(shortDateFmt.format(t.getDueAt()));
                         tDto.setDueTime(timeFmt.format(t.getDueAt()));
                     } else {
+                        tDto.setDueDate(mDto.getDueDate());
                         tDto.setDueTime("10:00 AM");
                     }
 

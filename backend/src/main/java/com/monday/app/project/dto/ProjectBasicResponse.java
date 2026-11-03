@@ -12,6 +12,7 @@ public class ProjectBasicResponse {
     private String category;
     private String status;
     private String priority;
+    private String leadArchitect;
     private String tags; // JSON string
     private Instant startAt;
     private Instant dueAt;
@@ -40,6 +41,9 @@ public class ProjectBasicResponse {
 
     public String getPriority() { return priority; }
     public void setPriority(String priority) { this.priority = priority; }
+
+    public String getLeadArchitect() { return leadArchitect; }
+    public void setLeadArchitect(String leadArchitect) { this.leadArchitect = leadArchitect; }
 
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }

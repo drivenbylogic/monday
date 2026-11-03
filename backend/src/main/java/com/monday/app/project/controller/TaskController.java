@@ -32,7 +32,9 @@ public class TaskController {
             @RequestParam(required = false) UUID projectId,
             @RequestParam(required = false) UUID milestoneId,
             @RequestParam(required = false) UUID eventId,
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false, defaultValue = "30") Integer size) {
         
         if (projectId != null) {
             return ResponseEntity.ok(taskService.getByProjectId(projectId));
@@ -42,6 +44,15 @@ public class TaskController {
             return ResponseEntity.ok(taskService.getByEventId(eventId));
         } else if (status != null && !status.isBlank()) {
             return ResponseEntity.ok(taskService.getByStatus(status));
+        } else if (page != null) {
+            int pageSize = (size != null && size > 0) ? size : 30;
+            List<Task> tasks = taskService.getPaged(page, pageSize);
+            int total = taskService.countAll();
+            return ResponseEntity.ok()
+                    .header("X-Total-Count", String.valueOf(total))
+                    .header("X-Page-Number", String.valueOf(page))
+                    .header("X-Page-Size", String.valueOf(pageSize))
+                    .body(tasks);
         }
         
         return ResponseEntity.ok(taskService.getAll());
