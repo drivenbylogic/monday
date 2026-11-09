@@ -61,6 +61,16 @@ public class AdministrationAppointmentController {
         return ResponseEntity.ok(service.updateStatus(id, status));
     }
 
+    @PatchMapping("/{id}/complete")
+    public ResponseEntity<AppointmentDto> complete(@PathVariable UUID id) {
+        return ResponseEntity.ok(service.updateStatus(id, "COMPLETED"));
+    }
+
+    @PatchMapping("/{id}/cancel")
+    public ResponseEntity<AppointmentDto> cancel(@PathVariable UUID id) {
+        return ResponseEntity.ok(service.updateStatus(id, "CANCELLED"));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);

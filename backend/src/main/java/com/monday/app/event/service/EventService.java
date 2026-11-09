@@ -64,6 +64,18 @@ public class EventService {
         return saved;
     }
 
+    @Transactional
+    public Event updateStatus(UUID id, String status) {
+        Event existing = eventRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Event", id));
+        existing.setStatus(status != null ? status.toUpperCase().trim() : "SCHEDULED");
+        Event saved = eventRepository.update(existing);
+        if (saved.isRequiresPrep()) {
+            saved.setPrepChecklist(eventRepository.getPrepItemsForEvent(saved.getId()));
+        }
+        return saved;
+    }
+
     public Event getById(UUID id) {
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Event", id));

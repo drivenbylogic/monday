@@ -233,7 +233,12 @@ public class TaskRepository {
 
     public java.util.List<Task> findByProjectIds(java.util.Collection<UUID> projectIds) {
         if (projectIds == null || projectIds.isEmpty()) return java.util.Collections.emptyList();
-        String sql = "SELECT * FROM tasks WHERE project_id IN (:projectIds) ORDER BY due_at ASC NULLS LAST";
+        String sql = """
+                SELECT * FROM tasks
+                WHERE project_id IN (:projectIds)
+                   OR milestone_id IN (SELECT id FROM milestones WHERE project_id IN (:projectIds))
+                ORDER BY due_at ASC NULLS LAST
+                """;
         return jdbc.query(sql, new MapSqlParameterSource("projectIds", projectIds), TaskRowMapper.INSTANCE);
     }
 

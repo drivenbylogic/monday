@@ -54,6 +54,24 @@ public class EventController {
         return ResponseEntity.noContent().build();
     }
 
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<Event> updateStatus(
+            @PathVariable UUID id,
+            @RequestBody java.util.Map<String, String> body) {
+        String status = body.getOrDefault("status", "SCHEDULED");
+        return ResponseEntity.ok(eventService.updateStatus(id, status));
+    }
+
+    @PatchMapping("/{id}/complete")
+    public ResponseEntity<Event> completeEvent(@PathVariable UUID id) {
+        return ResponseEntity.ok(eventService.updateStatus(id, "COMPLETED"));
+    }
+
+    @PatchMapping("/{id}/cancel")
+    public ResponseEntity<Event> cancelEvent(@PathVariable UUID id) {
+        return ResponseEntity.ok(eventService.updateStatus(id, "CANCELLED"));
+    }
+
     // --- Actual API Endpoints from Architecture Doc ---
 
     @GetMapping("/pulse")

@@ -182,18 +182,20 @@ public class TaskService {
     }
 
     private void validateReferences(Task task) {
-        if (task.getProjectId() != null) {
-            projectRepository.findById(task.getProjectId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Project", task.getProjectId()));
-        }
         if (task.getMilestoneId() != null) {
             var milestone = milestoneRepository.findById(task.getMilestoneId())
                     .orElseThrow(() -> new ResourceNotFoundException("Milestone", task.getMilestoneId()));
-            // If both project and milestone are set, milestone must belong to the project
-            if (task.getProjectId() != null && !milestone.getProjectId().equals(task.getProjectId())) {
+            // If project is not explicitly provided, infer it directly from the milestone
+            if (task.getProjectId() == null) {
+                task.setProjectId(milestone.getProjectId());
+            } else if (!milestone.getProjectId().equals(task.getProjectId())) {
                 throw new BusinessRuleException("MILESTONE_PROJECT_MISMATCH",
                         "Milestone does not belong to the specified project");
             }
+        }
+        if (task.getProjectId() != null) {
+            projectRepository.findById(task.getProjectId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Project", task.getProjectId()));
         }
     }
 }

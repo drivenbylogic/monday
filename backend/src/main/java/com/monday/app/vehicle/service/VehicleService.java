@@ -206,6 +206,8 @@ public class VehicleService {
     public java.util.Map<String, Object> getFleet(String status) {
         String sql = "SELECT v.id, v.name, v.edition, v.variant, v.type, v.registration_number as \"registrationNumber\", " +
                      "v.is_primary as \"isPrimary\", v.hero_image_url as \"heroImageUrl\", " +
+                     "v.current_km as \"currentKm\", v.purchase_date as \"purchaseDate\", v.purchase_amount as \"purchaseAmount\", " +
+                     "v.status, v.vin, " +
                      "COALESCE((SELECT t.operational_readiness_score FROM vehicle_telemetry t WHERE t.vehicle_id = v.id ORDER BY t.recorded_at DESC LIMIT 1), 100) as \"operationalReadinessScore\" " +
                      "FROM vehicles v";
         if (!"all".equals(status)) {
