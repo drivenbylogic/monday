@@ -53,13 +53,20 @@ public class TaskService {
 
     @Transactional
     public Task create(Task task) {
+        if (task.getTitle() == null || task.getTitle().isBlank()) {
+            throw new BusinessRuleException("TASK_TITLE_REQUIRED", "Task title cannot be null or empty");
+        }
         validateReferences(task);
 
-        if (task.getStatus() == null) {
+        if (task.getStatus() == null || task.getStatus().isBlank()) {
             task.setStatus("PENDING");
+        } else {
+            task.setStatus(task.getStatus().trim().toUpperCase());
         }
-        if (task.getPriority() == null) {
+        if (task.getPriority() == null || task.getPriority().isBlank()) {
             task.setPriority("MEDIUM");
+        } else {
+            task.setPriority(task.getPriority().trim().toUpperCase());
         }
         Task saved = taskRepository.save(task);
         evictMetrics();
@@ -71,26 +78,82 @@ public class TaskService {
         Task existing = taskRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Task", id));
 
-        validateReferences(updated);
+        if (updated.getTitle() != null && !updated.getTitle().isBlank()) {
+            existing.setTitle(updated.getTitle().trim());
+        }
+        if (updated.getDescription() != null) {
+            existing.setDescription(updated.getDescription());
+        }
 
-        existing.setTitle(updated.getTitle());
-        existing.setDescription(updated.getDescription());
-        existing.setProjectId(updated.getProjectId());
-        existing.setMilestoneId(updated.getMilestoneId());
-        existing.setEventId(updated.getEventId());
-        existing.setStatus(updated.getStatus());
-        existing.setPriority(updated.getPriority());
-        existing.setDueAt(updated.getDueAt());
-        existing.setEstimatedMinutes(updated.getEstimatedMinutes());
+        // Validate and apply references
+        if (updated.getMilestoneId() != null) {
+            var milestone = milestoneRepository.findById(updated.getMilestoneId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Milestone", updated.getMilestoneId()));
+            existing.setMilestoneId(updated.getMilestoneId());
+            if (updated.getProjectId() != null) {
+                if (!milestone.getProjectId().equals(updated.getProjectId())) {
+                    throw new BusinessRuleException("MILESTONE_PROJECT_MISMATCH",
+                            "Milestone does not belong to the specified project");
+                }
+                existing.setProjectId(updated.getProjectId());
+            } else {
+                existing.setProjectId(milestone.getProjectId());
+            }
+        } else if (updated.getProjectId() != null) {
+            projectRepository.findById(updated.getProjectId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Project", updated.getProjectId()));
+            existing.setProjectId(updated.getProjectId());
+            if (existing.getMilestoneId() != null) {
+                var milestone = milestoneRepository.findById(existing.getMilestoneId()).orElse(null);
+                if (milestone != null && !milestone.getProjectId().equals(updated.getProjectId())) {
+                    existing.setMilestoneId(null);
+                }
+            }
+        }
+
+        if (updated.getEventId() != null) {
+            existing.setEventId(updated.getEventId());
+        }
+        if (updated.getParentTaskId() != null) {
+            existing.setParentTaskId(updated.getParentTaskId());
+        }
+        if (updated.getPriority() != null && !updated.getPriority().isBlank()) {
+            existing.setPriority(updated.getPriority().trim().toUpperCase());
+        }
+        if (updated.getDueAt() != null) {
+            existing.setDueAt(updated.getDueAt());
+        }
+        if (updated.getEstimatedMinutes() != null) {
+            existing.setEstimatedMinutes(updated.getEstimatedMinutes());
+        }
+        if (updated.getRecurring() != null) {
+            existing.setRecurring(updated.getRecurring());
+        }
+        if (updated.getRecurrencePattern() != null) {
+            existing.setRecurrencePattern(updated.getRecurrencePattern());
+        }
 
         // Status transitions
-        if ("IN_PROGRESS".equals(updated.getStatus()) && existing.getStartedAt() == null) {
-            existing.setStartedAt(Instant.now());
+        if (updated.getStatus() != null && !updated.getStatus().isBlank()) {
+            String newStatus = updated.getStatus().trim().toUpperCase();
+            existing.setStatus(newStatus);
+            if ("IN_PROGRESS".equals(newStatus) && existing.getStartedAt() == null) {
+                existing.setStartedAt(Instant.now());
+            }
+            if ("COMPLETED".equals(newStatus)) {
+                if (existing.getCompletedAt() == null) {
+                    existing.setCompletedAt(Instant.now());
+                }
+            } else {
+                existing.setCompletedAt(null);
+            }
         }
-        if ("COMPLETED".equals(updated.getStatus()) && existing.getCompletedAt() == null) {
-            existing.setCompletedAt(Instant.now());
-        } else if (!"COMPLETED".equals(updated.getStatus())) {
-            existing.setCompletedAt(null);
+
+        if (updated.getStartedAt() != null) {
+            existing.setStartedAt(updated.getStartedAt());
+        }
+        if (updated.getCompletedAt() != null) {
+            existing.setCompletedAt(updated.getCompletedAt());
         }
 
         Task saved = taskRepository.update(existing);

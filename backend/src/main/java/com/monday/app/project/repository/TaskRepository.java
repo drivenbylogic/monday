@@ -194,6 +194,20 @@ public class TaskRepository {
         jdbc.update("DELETE FROM tasks WHERE id = :id", new MapSqlParameterSource("id", id));
     }
 
+    public void deleteByProjectId(UUID projectId) {
+        String sql = """
+                DELETE FROM tasks
+                WHERE project_id = :projectId
+                   OR milestone_id IN (SELECT id FROM milestones WHERE project_id = :projectId)
+                """;
+        jdbc.update(sql, new MapSqlParameterSource("projectId", projectId));
+    }
+
+    public void deleteByMilestoneId(UUID milestoneId) {
+        String sql = "DELETE FROM tasks WHERE milestone_id = :milestoneId";
+        jdbc.update(sql, new MapSqlParameterSource("milestoneId", milestoneId));
+    }
+
     public Optional<Task> findNextByProjectId(UUID projectId) {
         String sql = """
                 SELECT * FROM tasks

@@ -172,4 +172,15 @@ class ProjectControllerTest {
 
         verify(projectService).getVelocityMetrics();
     }
+
+    @Test
+    void deleteProject_validId_returnsNoContent() throws Exception {
+        java.util.UUID projectId = java.util.UUID.randomUUID();
+        doNothing().when(projectService).delete(projectId);
+
+        mockMvc.perform(delete("/api/v1/projects/" + projectId))
+                .andExpect(status().isNoContent());
+
+        verify(projectService).delete(projectId);
+    }
 }

@@ -3,6 +3,7 @@ package com.monday.app.project.service;
 import com.monday.app.project.entity.Milestone;
 import com.monday.app.project.repository.MilestoneRepository;
 import com.monday.app.project.repository.ProjectRepository;
+import com.monday.app.project.repository.TaskRepository;
 import com.monday.app.shared.cache.CacheInvalidationService;
 import com.monday.app.shared.cache.CacheNames;
 import com.monday.app.shared.exception.ResourceNotFoundException;
@@ -19,19 +20,23 @@ public class MilestoneService {
 
     private final MilestoneRepository milestoneRepository;
     private final ProjectRepository projectRepository;
+    private final TaskRepository taskRepository;
     private final CacheInvalidationService cacheInvalidationService;
 
     public MilestoneService(MilestoneRepository milestoneRepository,
-                            ProjectRepository projectRepository) {
-        this(milestoneRepository, projectRepository, null);
+                            ProjectRepository projectRepository,
+                            TaskRepository taskRepository) {
+        this(milestoneRepository, projectRepository, taskRepository, null);
     }
 
     @Autowired
     public MilestoneService(MilestoneRepository milestoneRepository,
                             ProjectRepository projectRepository,
+                            TaskRepository taskRepository,
                             @org.springframework.lang.Nullable CacheInvalidationService cacheInvalidationService) {
         this.milestoneRepository = milestoneRepository;
         this.projectRepository = projectRepository;
+        this.taskRepository = taskRepository;
         this.cacheInvalidationService = cacheInvalidationService;
     }
 
@@ -67,17 +72,36 @@ public class MilestoneService {
         Milestone existing = milestoneRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Milestone", id));
 
-        existing.setName(updated.getName());
-        existing.setDescription(updated.getDescription());
-        existing.setStatus(updated.getStatus());
-        existing.setPriority(updated.getPriority());
-        existing.setStartAt(updated.getStartAt());
-        existing.setDueAt(updated.getDueAt());
+        if (updated.getName() != null && !updated.getName().isBlank()) {
+            existing.setName(updated.getName().trim());
+        }
+        if (updated.getDescription() != null) {
+            existing.setDescription(updated.getDescription());
+        }
+        if (updated.getPriority() != null && !updated.getPriority().isBlank()) {
+            existing.setPriority(updated.getPriority().trim().toUpperCase());
+        }
+        if (updated.getStartAt() != null) {
+            existing.setStartAt(updated.getStartAt());
+        }
+        if (updated.getDueAt() != null) {
+            existing.setDueAt(updated.getDueAt());
+        }
 
-        if ("COMPLETED".equals(updated.getStatus()) && existing.getCompletedAt() == null) {
-            existing.setCompletedAt(Instant.now());
-        } else if (!"COMPLETED".equals(updated.getStatus())) {
-            existing.setCompletedAt(null);
+        if (updated.getStatus() != null && !updated.getStatus().isBlank()) {
+            String newStatus = updated.getStatus().trim().toUpperCase();
+            existing.setStatus(newStatus);
+            if ("COMPLETED".equals(newStatus)) {
+                if (existing.getCompletedAt() == null) {
+                    existing.setCompletedAt(Instant.now());
+                }
+            } else {
+                existing.setCompletedAt(null);
+            }
+        }
+
+        if (updated.getCompletedAt() != null) {
+            existing.setCompletedAt(updated.getCompletedAt());
         }
 
         Milestone saved = milestoneRepository.update(existing);
@@ -98,6 +122,9 @@ public class MilestoneService {
     public void delete(UUID id) {
         milestoneRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Milestone", id));
+        if (taskRepository != null) {
+            taskRepository.deleteByMilestoneId(id);
+        }
         milestoneRepository.deleteById(id);
         evictMetrics();
     }

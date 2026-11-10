@@ -16,11 +16,79 @@ public class AgendaController {
 
     private final AgendaEngineService agendaEngineService;
     private final AgendaGenerationService agendaGenerationService;
+    private final com.monday.app.agenda.service.BetaBriefGenerationService betaBriefGenerationService;
 
     public AgendaController(AgendaEngineService agendaEngineService,
                             AgendaGenerationService agendaGenerationService) {
+        this(agendaEngineService, agendaGenerationService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgendaController(AgendaEngineService agendaEngineService,
+                            AgendaGenerationService agendaGenerationService,
+                            com.monday.app.agenda.service.BetaBriefGenerationService betaBriefGenerationService) {
         this.agendaEngineService = agendaEngineService;
         this.agendaGenerationService = agendaGenerationService;
+        this.betaBriefGenerationService = betaBriefGenerationService;
+    }
+
+    /**
+     * Beta Daily Briefing - Revamped AI Daily Brief with structured 7-section output.
+     */
+    @GetMapping({"/beta", "/beta-brief"})
+    public ResponseEntity<BetaDailyBriefResponse> getBetaDailyBrief(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestHeader(value = "X-Timezone", defaultValue = "UTC") String timezone) {
+
+        if (betaBriefGenerationService == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        ZoneId zoneId = parseZoneId(timezone);
+        if (date == null) {
+            date = LocalDate.now(zoneId);
+        }
+
+        BetaDailyBriefResponse response = betaBriefGenerationService.getBrief(date, zoneId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Regenerate or refresh the Beta Daily Briefing explicitly.
+     */
+    @PostMapping({"/beta/generate", "/generate-beta"})
+    public ResponseEntity<BetaDailyBriefResponse> generateBetaDailyBrief(@RequestBody(required = false) GenerateBetaBriefRequest request) {
+        if (betaBriefGenerationService == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        LocalDate date = request != null && request.date() != null ? request.date() : LocalDate.now();
+        ZoneId zoneId = request != null && request.timezone() != null ? parseZoneId(request.timezone()) : ZoneId.of("UTC");
+        boolean force = request != null && Boolean.TRUE.equals(request.force());
+
+        BetaDailyBriefResponse response = betaBriefGenerationService.generateBrief(date, zoneId, force);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Returns the structured snapshot payload feeding the AI gateway for the Daily Brief.
+     */
+    @GetMapping({"/beta/snapshot", "/beta-snapshot"})
+    public ResponseEntity<DailyBriefSnapshotDto> getBetaSnapshot(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestHeader(value = "X-Timezone", defaultValue = "UTC") String timezone) {
+
+        if (betaBriefGenerationService == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        ZoneId zoneId = parseZoneId(timezone);
+        if (date == null) {
+            date = LocalDate.now(zoneId);
+        }
+
+        DailyBriefSnapshotDto snapshot = betaBriefGenerationService.getSnapshot(date, zoneId);
+        return ResponseEntity.ok(snapshot);
     }
 
     /**
@@ -69,8 +137,9 @@ public class AgendaController {
 
     /**
      * Preserved for backward compatibility with existing services.
+     * Constrained to ISO-8601 date format so other paths like /beta, /beta-brief, etc. are never intercepted.
      */
-    @GetMapping("/{date}")
+    @GetMapping("/{date:[0-9]{4}-[0-9]{2}-[0-9]{2}}")
     public ResponseEntity<DailyAgenda> getAgendaForDate(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @RequestHeader(value = "X-Timezone", defaultValue = "UTC") String timezone) {

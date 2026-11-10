@@ -172,6 +172,14 @@ public class ProjectService {
     public void delete(UUID id) {
         projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", id));
+
+        // Cascade delete all tasks associated with this project and its milestones
+        taskRepository.deleteByProjectId(id);
+
+        // Cascade delete all milestones belonging to this project
+        milestoneRepository.deleteByProjectId(id);
+
+        // Delete the project
         projectRepository.deleteById(id);
         evictMetrics();
     }

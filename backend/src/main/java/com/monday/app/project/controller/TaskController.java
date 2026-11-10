@@ -64,7 +64,12 @@ public class TaskController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Task> updateTask(@PathVariable UUID id, @Valid @RequestBody Task task) {
+    public ResponseEntity<Task> updateTask(@PathVariable UUID id, @RequestBody Task task) {
+        return ResponseEntity.ok(taskService.update(id, task));
+    }
+
+    @PatchMapping("/{id}")
+    public ResponseEntity<Task> patchTask(@PathVariable UUID id, @RequestBody Task task) {
         return ResponseEntity.ok(taskService.update(id, task));
     }
 

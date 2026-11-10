@@ -24,7 +24,7 @@ public final class Task {
     private Instant startedAt;
     private Instant completedAt;
     private Integer estimatedMinutes;
-    private boolean recurring;
+    private Boolean recurring;
     private String recurrencePattern;
     private Instant createdAt;
     private Instant updatedAt;
@@ -35,7 +35,7 @@ public final class Task {
                 UUID projectId, UUID milestoneId, UUID eventId, UUID parentTaskId,
                 String status, String priority,
                 Instant dueAt, Instant startedAt, Instant completedAt,
-                Integer estimatedMinutes, boolean recurring, String recurrencePattern,
+                Integer estimatedMinutes, Boolean recurring, String recurrencePattern,
                 Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.title = title;
@@ -50,7 +50,7 @@ public final class Task {
         this.startedAt = startedAt;
         this.completedAt = completedAt;
         this.estimatedMinutes = estimatedMinutes;
-        this.recurring = recurring;
+        this.recurring = recurring != null ? recurring : false;
         this.recurrencePattern = recurrencePattern;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -95,8 +95,9 @@ public final class Task {
     public Integer getEstimatedMinutes() { return estimatedMinutes; }
     public void setEstimatedMinutes(Integer estimatedMinutes) { this.estimatedMinutes = estimatedMinutes; }
 
-    public boolean isRecurring() { return recurring; }
-    public void setRecurring(boolean recurring) { this.recurring = recurring; }
+    public boolean isRecurring() { return recurring != null && recurring; }
+    public Boolean getRecurring() { return recurring; }
+    public void setRecurring(Boolean recurring) { this.recurring = recurring; }
 
     public String getRecurrencePattern() { return recurrencePattern; }
     public void setRecurrencePattern(String recurrencePattern) { this.recurrencePattern = recurrencePattern; }

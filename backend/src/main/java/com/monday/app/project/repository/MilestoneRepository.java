@@ -85,6 +85,10 @@ public class MilestoneRepository {
         jdbc.update("DELETE FROM milestones WHERE id = :id", new MapSqlParameterSource("id", id));
     }
 
+    public void deleteByProjectId(UUID projectId) {
+        jdbc.update("DELETE FROM milestones WHERE project_id = :projectId", new MapSqlParameterSource("projectId", projectId));
+    }
+
     public Optional<Milestone> findNextByProjectId(UUID projectId) {
         String sql = """
                 SELECT * FROM milestones
