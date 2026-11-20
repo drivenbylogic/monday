@@ -15,5 +15,35 @@ public record TodayAgendaResponse(
         FinancialHeadsUpDto financialHeadsUp,
         ExecutionInsightDto executionInsight,
         boolean isStale,
-        String staleReason
-) {}
+        String staleReason,
+        List<AdministrationAgendaSummaryDto.AdminImportantDateSummaryDto> occasionsToday
+) {
+    public TodayAgendaResponse(
+            LocalDate date,
+            String status,
+            Instant generatedAt,
+            String summaryMarkdown,
+            List<AgendaRecommendationDto> recommendations,
+            List<SuggestedTimeBlockDto> suggestedFocusBlocks,
+            List<AgendaAlertDto> importantAlerts,
+            FinancialHeadsUpDto financialHeadsUp,
+            ExecutionInsightDto executionInsight,
+            boolean isStale,
+            String staleReason
+    ) {
+        this(
+                date,
+                status,
+                generatedAt,
+                summaryMarkdown,
+                recommendations,
+                suggestedFocusBlocks,
+                importantAlerts,
+                financialHeadsUp,
+                executionInsight,
+                isStale,
+                staleReason,
+                List.of()
+        );
+    }
+}

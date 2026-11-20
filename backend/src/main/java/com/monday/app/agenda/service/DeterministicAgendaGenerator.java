@@ -45,6 +45,11 @@ public class DeterministicAgendaGenerator {
         // 6. Build narrative summary markdown
         String summaryMarkdown = buildSummaryMarkdown(context, recommendations, alerts);
 
+        List<AdministrationAgendaSummaryDto.AdminImportantDateSummaryDto> occasionsToday =
+                (context.administration() != null && context.administration().upcomingDates() != null)
+                        ? context.administration().upcomingDates().stream().filter(d -> d.daysRemaining() == 0).toList()
+                        : List.of();
+
         return new TodayAgendaResponse(
                 date,
                 "GENERATED",
@@ -56,7 +61,8 @@ public class DeterministicAgendaGenerator {
                 financialHeadsUp,
                 executionInsight,
                 false,
-                null
+                null,
+                occasionsToday
         );
     }
 
@@ -464,10 +470,13 @@ public class DeterministicAgendaGenerator {
                 ));
             } else if (!ctx.administration().upcomingDates().isEmpty() && ctx.administration().upcomingDates().get(0).daysRemaining() <= 3) {
                 AdministrationAgendaSummaryDto.AdminImportantDateSummaryDto id = ctx.administration().upcomingDates().get(0);
+                boolean isToday = id.daysRemaining() == 0;
                 alerts.add(new AgendaAlertDto(
                         "ADMINISTRATIVE",
-                        "Impending Date: " + id.title(),
-                        id.title() + (id.personName() != null ? " (" + id.personName() + ")" : "") + " is in " + id.daysRemaining() + " days. Verify all arrangements.",
+                        isToday ? "Occasion Today: " + id.title() : "Impending Date: " + id.title(),
+                        isToday
+                                ? "Today is " + id.title() + (id.personName() != null ? " (" + id.personName() + ")" : "") + "! Celebratory wishes and arrangements due today."
+                                : id.title() + (id.personName() != null ? " (" + id.personName() + ")" : "") + " is in " + id.daysRemaining() + " days. Verify all arrangements.",
                         "INFO"
                 ));
             }
@@ -590,7 +599,13 @@ public class DeterministicAgendaGenerator {
                     .append(" active commitments. ");
             if (!ctx.administration().upcomingDates().isEmpty()) {
                 AdministrationAgendaSummaryDto.AdminImportantDateSummaryDto nextDate = ctx.administration().upcomingDates().get(0);
-                sb.append("Next occasion: **").append(nextDate.title()).append("** in ").append(nextDate.daysRemaining()).append(" days.\n\n");
+                if (nextDate.daysRemaining() == 0) {
+                    sb.append("🎉 **Occasion Today:** **").append(nextDate.title()).append("**")
+                            .append(nextDate.personName() != null ? " (" + nextDate.personName() + ")" : "")
+                            .append(" (Today!).\n\n");
+                } else {
+                    sb.append("Next occasion: **").append(nextDate.title()).append("** in ").append(nextDate.daysRemaining()).append(" days.\n\n");
+                }
             } else {
                 sb.append("No immediate occasion alerts.\n\n");
             }

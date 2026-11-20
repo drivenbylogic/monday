@@ -114,6 +114,16 @@ public class AdministrationImportantDateService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<ImportantDateDto> getOccasionsForDate(LocalDate date) {
+        if (date == null) date = LocalDate.now();
+        final LocalDate targetDate = date;
+        return repository.findAll(false).stream()
+                .map(d -> toDto(d, targetDate))
+                .filter(dto -> dto.nextOccurrence() != null && dto.nextOccurrence().isEqual(targetDate))
+                .toList();
+    }
+
     public ImportantDateDto toDto(AdministrationImportantDate d, LocalDate today) {
         LocalDate nextOccurrence = AdministrationDateUtils.calculateNextImportantDateOccurrence(
                 d.getDate(), d.getRecurrenceType(), today);

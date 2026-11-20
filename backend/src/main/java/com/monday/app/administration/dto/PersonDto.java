@@ -32,5 +32,10 @@ public record PersonDto(
     public String generalNotes() {
         return notes;
     }
+
+    @JsonProperty("isArchived")
+    public boolean isArchived() {
+        return archivedAt != null;
+    }
 }
 

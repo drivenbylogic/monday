@@ -17,12 +17,43 @@ public record AdministrationAgendaSummaryDto(
         List<AdminObligationSummaryDto> upcomingObligations,
         int upcomingOccasionsCount,
         List<AdminImportantDateSummaryDto> upcomingDates,
+        List<AdminImportantDateSummaryDto> occasionsToday,
         int maintenanceDueCount,
         List<AdminMaintenanceSummaryDto> upcomingMaintenance,
         int upcomingAppointmentsCount,
         List<AdminAppointmentSummaryDto> upcomingAppointments,
         int pendingChecklistItemsCount
 ) {
+    public AdministrationAgendaSummaryDto(
+            int activeObligationsCount,
+            int obligationsDueSoonCount,
+            int obligationsOverdueCount,
+            BigDecimal monthlySubscriptionCommitment,
+            List<AdminObligationSummaryDto> upcomingObligations,
+            int upcomingOccasionsCount,
+            List<AdminImportantDateSummaryDto> upcomingDates,
+            int maintenanceDueCount,
+            List<AdminMaintenanceSummaryDto> upcomingMaintenance,
+            int upcomingAppointmentsCount,
+            List<AdminAppointmentSummaryDto> upcomingAppointments,
+            int pendingChecklistItemsCount
+    ) {
+        this(
+                activeObligationsCount,
+                obligationsDueSoonCount,
+                obligationsOverdueCount,
+                monthlySubscriptionCommitment,
+                upcomingObligations,
+                upcomingOccasionsCount,
+                upcomingDates,
+                upcomingDates != null ? upcomingDates.stream().filter(d -> d.daysRemaining() == 0).toList() : List.of(),
+                maintenanceDueCount,
+                upcomingMaintenance,
+                upcomingAppointmentsCount,
+                upcomingAppointments,
+                pendingChecklistItemsCount
+        );
+    }
     public record AdminObligationSummaryDto(
             UUID id,
             String name,

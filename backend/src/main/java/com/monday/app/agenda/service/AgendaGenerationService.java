@@ -170,6 +170,11 @@ public class AgendaGenerationService {
                         context.schedule().events()
                 );
 
+                List<AdministrationAgendaSummaryDto.AdminImportantDateSummaryDto> occasionsToday =
+                        (context.administration() != null && context.administration().upcomingDates() != null)
+                                ? context.administration().upcomingDates().stream().filter(d -> d.daysRemaining() == 0).toList()
+                                : (generated.occasionsToday() != null ? generated.occasionsToday() : List.of());
+
                 TodayAgendaResponse finalAgenda = new TodayAgendaResponse(
                         effectiveDate,
                         "GENERATED",
@@ -181,7 +186,8 @@ public class AgendaGenerationService {
                         generated.financialHeadsUp(),
                         generated.executionInsight(),
                         false,
-                        null
+                        null,
+                        occasionsToday
                 );
 
                 // 4. Persist to daily_briefs
@@ -426,7 +432,8 @@ public class AgendaGenerationService {
                 agenda.financialHeadsUp(),
                 agenda.executionInsight(),
                 agenda.isStale(),
-                agenda.staleReason()
+                agenda.staleReason(),
+                agenda.occasionsToday()
         );
 
         persistAgenda(updatedAgenda);

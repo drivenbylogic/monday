@@ -15,6 +15,7 @@ public record AdministrationOverviewDto(
         int totalPeopleCount,
         int upcomingOccasionsCount,
         List<ImportantDateDto> upcomingOccasions,
+        List<ImportantDateDto> occasionsToday,
 
         // Gadgets & Maintenance
         int totalGadgetsCount,
@@ -31,4 +32,47 @@ public record AdministrationOverviewDto(
         int pendingChecklistItemsCount,
         int totalNotesCount,
         List<NoteDto> recentNotes
-) {}
+) {
+    public AdministrationOverviewDto(
+            int totalActiveObligations,
+            int obligationsDueSoonCount,
+            int obligationsOverdueCount,
+            BigDecimal monthlySubscriptionCommitment,
+            List<ObligationDto> upcomingObligations,
+            int totalPeopleCount,
+            int upcomingOccasionsCount,
+            List<ImportantDateDto> upcomingOccasions,
+            int totalGadgetsCount,
+            int warrantiesExpiringSoonCount,
+            int maintenanceDueCount,
+            List<MaintenanceDto> upcomingMaintenance,
+            int upcomingAppointmentsCount,
+            List<AppointmentDto> upcomingAppointments,
+            int activeChecklistsCount,
+            int pendingChecklistItemsCount,
+            int totalNotesCount,
+            List<NoteDto> recentNotes
+    ) {
+        this(
+                totalActiveObligations,
+                obligationsDueSoonCount,
+                obligationsOverdueCount,
+                monthlySubscriptionCommitment,
+                upcomingObligations,
+                totalPeopleCount,
+                upcomingOccasionsCount,
+                upcomingOccasions,
+                upcomingOccasions != null ? upcomingOccasions.stream().filter(o -> o.daysRemaining() == 0).toList() : List.of(),
+                totalGadgetsCount,
+                warrantiesExpiringSoonCount,
+                maintenanceDueCount,
+                upcomingMaintenance,
+                upcomingAppointmentsCount,
+                upcomingAppointments,
+                activeChecklistsCount,
+                pendingChecklistItemsCount,
+                totalNotesCount,
+                recentNotes
+        );
+    }
+}

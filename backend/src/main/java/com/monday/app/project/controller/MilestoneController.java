@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/milestones")
+@RequestMapping({"/api/v1/milestones", "/api/milestones"})
 public class MilestoneController {
 
     private final MilestoneService milestoneService;

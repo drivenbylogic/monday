@@ -70,7 +70,8 @@ public class AdministrationOverviewService {
 
         // 2. People & Occasions
         int totalPeopleCount = personRepository.countAll();
-        List<ImportantDateDto> upcomingOccasions = dateService.getUpcomingOccasions(5);
+        List<ImportantDateDto> upcomingOccasions = dateService.getUpcomingOccasions(10);
+        List<ImportantDateDto> occasionsToday = dateService.getOccasionsForDate(today);
         int upcomingOccasionsCount = (int) upcomingOccasions.stream()
                 .filter(d -> d.daysRemaining() >= 0 && d.daysRemaining() <= 30)
                 .count();
@@ -102,6 +103,7 @@ public class AdministrationOverviewService {
                 totalPeopleCount,
                 upcomingOccasionsCount,
                 upcomingOccasions,
+                occasionsToday,
                 totalGadgetsCount,
                 warrantiesExpiringSoonCount,
                 maintenanceDueCount,

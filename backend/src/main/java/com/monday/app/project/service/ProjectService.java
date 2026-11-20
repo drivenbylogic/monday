@@ -184,6 +184,18 @@ public class ProjectService {
         evictMetrics();
     }
 
+    @Transactional
+    public void deleteMilestone(UUID projectId, UUID milestoneId) {
+        Milestone milestone = milestoneRepository.findById(milestoneId)
+                .orElseThrow(() -> new ResourceNotFoundException("Milestone", milestoneId));
+        if (projectId != null && milestone.getProjectId() != null && !projectId.equals(milestone.getProjectId())) {
+            throw new com.monday.app.shared.exception.BusinessRuleException("PROJECT_MILESTONE_MISMATCH", "Milestone does not belong to the specified project");
+        }
+        taskRepository.deleteByMilestoneId(milestoneId);
+        milestoneRepository.deleteById(milestoneId);
+        evictMetrics();
+    }
+
     public List<ProjectBasicResponse> getBasicProjects() {
         List<Project> projects = projectRepository.findAll();
         List<UUID> projectIds = projects.stream().map(Project::getId).toList();

@@ -273,6 +273,20 @@ public class HomeDashboardService {
         // Detect conflicts between timed events
         List<ScheduleConflictDto> conflicts = detectConflicts(eventSummaries);
 
+        List<AdministrationAgendaSummaryDto.AdminImportantDateSummaryDto> occasionsToday = Collections.emptyList();
+        if (adminOverviewService != null) {
+            try {
+                AdministrationOverviewDto overview = adminOverviewService.getOverview();
+                if (overview != null && overview.occasionsToday() != null) {
+                    occasionsToday = overview.occasionsToday().stream()
+                            .map(d -> new AdministrationAgendaSummaryDto.AdminImportantDateSummaryDto(
+                                    d.id(), d.title(), d.date(), d.dateType(), d.personName(), d.daysRemaining()
+                            ))
+                            .toList();
+                }
+            } catch (Exception ignored) {}
+        }
+
         return new ScheduleDashboardDto(
                 eventSummaries,
                 remindersToday,
@@ -280,7 +294,8 @@ public class HomeDashboardService {
                 conflicts,
                 eventSummaries.size(),
                 allDayCount,
-                scheduledMinutes
+                scheduledMinutes,
+                occasionsToday
         );
     }
 
@@ -920,6 +935,19 @@ public class HomeDashboardService {
                 .toList()
                 : Collections.emptyList();
 
+        List<AdministrationAgendaSummaryDto.AdminImportantDateSummaryDto> occasionsToday = overview.occasionsToday() != null
+                ? overview.occasionsToday().stream()
+                .map(d -> new AdministrationAgendaSummaryDto.AdminImportantDateSummaryDto(
+                        d.id(),
+                        d.title(),
+                        d.date(),
+                        d.dateType(),
+                        d.personName(),
+                        d.daysRemaining()
+                ))
+                .toList()
+                : dates.stream().filter(d -> d.daysRemaining() == 0).toList();
+
         List<AdministrationAgendaSummaryDto.AdminMaintenanceSummaryDto> maintenance = overview.upcomingMaintenance() != null
                 ? overview.upcomingMaintenance().stream()
                 .map(m -> new AdministrationAgendaSummaryDto.AdminMaintenanceSummaryDto(
@@ -952,6 +980,7 @@ public class HomeDashboardService {
                 obligations,
                 overview.upcomingOccasionsCount(),
                 dates,
+                occasionsToday,
                 overview.maintenanceDueCount(),
                 maintenance,
                 overview.upcomingAppointmentsCount(),

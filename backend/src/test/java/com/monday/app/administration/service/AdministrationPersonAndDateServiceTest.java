@@ -81,4 +81,29 @@ class AdministrationPersonAndDateServiceTest {
         assertEquals("Doctor Appointment Prep", upcoming.get(0).title());
         assertEquals("Eleanor Birthday", upcoming.get(1).title());
     }
+
+    @Test
+    void testGetOccasionsForDateMatchesAnnualAndSameDayOccasion() {
+        LocalDate today = LocalDate.now();
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+
+        // Occasion today (annual birthday from 10 years ago)
+        AdministrationImportantDate birthdayToday = new AdministrationImportantDate(
+                id1, "Eleanor Birthday", null, today.minusYears(10), "BIRTHDAY", null,
+                "ANNUAL", null, 7, null, Instant.now(), Instant.now()
+        );
+        // Occasion tomorrow
+        AdministrationImportantDate milestoneTomorrow = new AdministrationImportantDate(
+                id2, "Product Launch", null, today.plusDays(1), "PERSONAL_MILESTONE", null,
+                "ONCE", null, 3, null, Instant.now(), Instant.now()
+        );
+
+        when(dateRepository.findAll(false)).thenReturn(List.of(birthdayToday, milestoneTomorrow));
+
+        List<ImportantDateDto> occasionsToday = dateService.getOccasionsForDate(today);
+        assertEquals(1, occasionsToday.size());
+        assertEquals("Eleanor Birthday", occasionsToday.get(0).title());
+        assertEquals(0, occasionsToday.get(0).daysRemaining());
+    }
 }

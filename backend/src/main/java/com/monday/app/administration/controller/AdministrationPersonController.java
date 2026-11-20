@@ -34,9 +34,14 @@ public class AdministrationPersonController {
             @RequestParam(required = false) Boolean archived,
             @RequestParam(required = false) Boolean includeArchived) {
         String searchQuery = (query != null && !query.isBlank()) ? query : search;
-        Boolean isArchived = archived;
-        if (isArchived == null && includeArchived != null && !includeArchived) {
+        Boolean isArchived = null;
+        if (Boolean.TRUE.equals(includeArchived)) {
+            // When includeArchived is true, do not restrict to only archived or only active
+            isArchived = null;
+        } else if (Boolean.FALSE.equals(includeArchived)) {
             isArchived = false;
+        } else if (archived != null) {
+            isArchived = archived;
         }
         return ResponseEntity.ok(personService.getPeople(searchQuery, isArchived));
     }

@@ -83,6 +83,14 @@ public class ProjectController {
         return ResponseEntity.ok(projectService.getExecutionQueue());
     }
 
+    @DeleteMapping("/{projectId}/milestones/{milestoneId}")
+    public ResponseEntity<Void> deleteMilestoneFromProject(
+            @PathVariable UUID projectId,
+            @PathVariable UUID milestoneId) {
+        projectService.deleteMilestone(projectId, milestoneId);
+        return ResponseEntity.noContent().build();
+    }
+
     // --- Deep Work Focus Sessions & Analytics ---
 
     @PostMapping("/deep-work/sessions")

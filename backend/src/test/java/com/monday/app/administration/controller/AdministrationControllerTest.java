@@ -222,4 +222,26 @@ class AdministrationControllerTest {
                 .andExpect(jsonPath("$.relationshipLabel").value("Business Partner"))
                 .andExpect(jsonPath("$.relationship").value("Business Partner"));
     }
+
+    @Test
+    void testGetPeopleIncludeArchivedAllowsAllPeople() throws Exception {
+        UUID personId = UUID.randomUUID();
+        when(personService.getPeople(null, null)).thenReturn(List.of(
+                new PersonDto(
+                        personId, "Eleanor Vance", "Spouse",
+                        LocalDate.of(1992, 6, 14), "eleanor@example.com", "Important notes",
+                        2, null, Instant.now(), Instant.now()
+                )
+        ));
+
+        mockMvc.perform(get("/api/v1/administration/people?includeArchived=true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].displayName").value("Eleanor Vance"))
+                .andExpect(jsonPath("$[0].isArchived").value(false));
+
+        // When includeArchived is false, it should query with archived=false
+        when(personService.getPeople(null, false)).thenReturn(List.of());
+        mockMvc.perform(get("/api/v1/administration/people?includeArchived=false"))
+                .andExpect(status().isOk());
+    }
 }
